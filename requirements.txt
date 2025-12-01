@@ -1,0 +1,26 @@
+# SELVE Chatbot Backend Dependencies
+
+# FastAPI and server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# OpenAI API
+openai==1.12.0
+
+# Qdrant vector database
+qdrant-client==1.7.3
+
+# Environment and config
+python-dotenv==1.0.0
+
+# Data validation
+pydantic==2.6.0
+pydantic-settings==2.1.0
+
+# CORS and middleware
+python-jose[cryptography]==3.3.0
+
+# Optional: For development
+pytest==7.4.4
+httpx==0.26.0
