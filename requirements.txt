@@ -28,3 +28,4 @@ python-jose[cryptography]==3.3.0
 # Optional: For development
 pytest==7.4.4
 httpx==0.26.0
+redis==5.0.1
