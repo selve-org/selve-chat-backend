@@ -4,21 +4,35 @@ FastAPI application with RAG-powered chat endpoint
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import os
 
 from app.routers import chat
+from app.db import connect_db, disconnect_db
 
 # Load environment variables
 load_dotenv()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle"""
+    # Startup
+    await connect_db()
+    yield
+    # Shutdown
+    await disconnect_db()
+
+
 # Create FastAPI app
 app = FastAPI(
     title="SELVE Chatbot API",
-    description="RAG-powered chatbot for the SELVE personality framework",
+    description="RAG-powered chatbot for the SELVE personality framework with dual LLM support",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS middleware (configure based on your frontend domain)

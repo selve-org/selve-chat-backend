@@ -1,21 +1,20 @@
 """
 Chat Service for SELVE Chatbot
-Integrates RAG with OpenAI Chat Completion
+Integrates RAG with Dual LLM Support (OpenAI + Anthropic)
 """
 import os
 from typing import List, Dict, Any
-from openai import OpenAI
+from .llm_service import LLMService
 from .rag_service import RAGService
 
 
 class ChatService:
-    """Service for handling chat interactions with RAG"""
+    """Service for handling chat interactions with RAG and dual LLM support"""
 
     def __init__(self):
-        """Initialize OpenAI client and RAG service"""
-        self.openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        """Initialize LLM service and RAG service"""
+        self.llm_service = LLMService()
         self.rag_service = RAGService()
-        self.model = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
         self.system_prompt = self._load_system_prompt()
 
     def _load_system_prompt(self) -> str:
@@ -79,21 +78,21 @@ Remember: All personalities have value. There are no "good" or "bad" scores - on
 
         messages.append({"role": "user", "content": user_message})
 
-        # Generate response from OpenAI
-        response = self.openai.chat.completions.create(
-            model=self.model,
+        # Generate response using unified LLM service
+        llm_response = self.llm_service.generate_response(
             messages=messages,
             temperature=0.7,
             max_tokens=500
         )
 
-        assistant_message = response.choices[0].message.content
-
         return {
-            "response": assistant_message,
+            "response": llm_response["content"],
             "context_used": context_info is not None and context_info["retrieved_count"] > 0,
             "retrieved_chunks": context_info["chunks"] if context_info else [],
-            "model": self.model
+            "model": llm_response["model"],
+            "provider": llm_response["provider"],
+            "usage": llm_response["usage"],
+            "cost": llm_response["cost"]
         }
 
     def generate_streaming_response(
@@ -103,35 +102,8 @@ Remember: All personalities have value. There are no "good" or "bad" scores - on
         use_rag: bool = True
     ):
         """
-        Generate a streaming chat response (for future use)
+        Generate a streaming chat response (TODO: implement with LLMService)
 
         Yields response chunks as they're generated
         """
-        # Retrieve context
-        context_info = None
-        if use_rag:
-            context_info = self.rag_service.get_context_for_query(message, top_k=3)
-
-        # Build messages
-        messages = [{"role": "system", "content": self.system_prompt}]
-        if conversation_history:
-            messages.extend(conversation_history)
-
-        user_message = message
-        if context_info and context_info["retrieved_count"] > 0:
-            user_message = f"{context_info['context']}\n\n---\n\nUser Question: {message}"
-
-        messages.append({"role": "user", "content": user_message})
-
-        # Stream response
-        stream = self.openai.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=500,
-            stream=True
-        )
-
-        for chunk in stream:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        raise NotImplementedError("Streaming responses will be implemented in Phase 5")
