@@ -3,18 +3,20 @@ Chat Service for SELVE Chatbot
 Integrates RAG with Dual LLM Support (OpenAI + Anthropic)
 """
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from .llm_service import LLMService
 from .rag_service import RAGService
+from .user_profile_service import UserProfileService
 
 
 class ChatService:
     """Service for handling chat interactions with RAG and dual LLM support"""
 
     def __init__(self):
-        """Initialize LLM service and RAG service"""
+        """Initialize LLM service, RAG service, and user profile service"""
         self.llm_service = LLMService()
         self.rag_service = RAGService()
+        self.user_profile_service = UserProfileService()
         self.system_prompt = self._load_system_prompt()
 
     def _load_system_prompt(self) -> str:
@@ -37,11 +39,12 @@ Guidelines:
 
 Remember: All personalities have value. There are no "good" or "bad" scores - only different ways of being human."""
 
-    def generate_response(
+    async def generate_response(
         self,
         message: str,
         conversation_history: List[Dict[str, str]] = None,
-        use_rag: bool = True
+        use_rag: bool = True,
+        clerk_user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate a chat response with optional RAG context
@@ -59,13 +62,25 @@ Remember: All personalities have value. There are no "good" or "bad" scores - on
                 "model": "model name"
             }
         """
+        # Retrieve user profile for personalization
+        user_context = None
+        if clerk_user_id:
+            profile = await self.user_profile_service.get_user_profile(clerk_user_id)
+            if profile and profile.get("has_assessment"):
+                user_context = self.user_profile_service.format_profile_for_context(profile)
+
         # Retrieve relevant context if RAG is enabled
         context_info = None
         if use_rag:
             context_info = self.rag_service.get_context_for_query(message, top_k=3)
 
-        # Build messages for OpenAI
-        messages = [{"role": "system", "content": self.system_prompt}]
+        # Build system prompt with user context
+        system_content = self.system_prompt
+        if user_context:
+            system_content = f"{self.system_prompt}\n\n{user_context}"
+
+        # Build messages
+        messages = [{"role": "system", "content": system_content}]
 
         # Add conversation history
         if conversation_history:

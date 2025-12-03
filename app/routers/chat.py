@@ -27,9 +27,10 @@ async def chat(
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """
-    Chat endpoint with RAG support
+    Chat endpoint with RAG support and user profile personalization
 
-    Generates responses using OpenAI with optional context from the SELVE knowledge base.
+    Generates responses using dual LLM with optional context from the SELVE knowledge base
+    and user's personality assessment data.
     """
     try:
         # Convert Pydantic messages to dict format
@@ -40,11 +41,12 @@ async def chat(
                 for msg in request.conversation_history
             ]
 
-        # Generate response
-        result = chat_service.generate_response(
+        # Generate response with user context
+        result = await chat_service.generate_response(
             message=request.message,
             conversation_history=conversation_history,
-            use_rag=request.use_rag
+            use_rag=request.use_rag,
+            clerk_user_id=getattr(request, 'clerk_user_id', None)
         )
 
         return ChatResponse(**result)
