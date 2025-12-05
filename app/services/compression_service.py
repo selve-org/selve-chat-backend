@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from app.db import db
 from .llm_service import LLMService
+from .memory_search_service import MemorySearchService
 
 
 class CompressionService:
@@ -39,6 +40,7 @@ class CompressionService:
         """Initialize compression service with LLM for summarization"""
         # Use GPT-4o-mini for compression (cheaper and good at summarization)
         self.llm_service = LLMService()
+        self.memory_search_service = MemorySearchService()
         self.compression_prompt = self._load_compression_prompt()
 
     def _load_compression_prompt(self) -> str:
@@ -190,6 +192,12 @@ Be concise but preserve important details. Focus on what matters for future conv
             where={"id": session_id},
             data={"compressionCount": {"increment": 1}}
         )
+
+        # Embed the memory for vector search (async, non-blocking)
+        try:
+            await self.memory_search_service.embed_memory(episodic_memory.id)
+        except Exception as e:
+            print(f"⚠️ Failed to embed memory {episodic_memory.id}: {e}")
 
         return {
             "compressed": True,
