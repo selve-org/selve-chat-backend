@@ -7,11 +7,17 @@ from app.models.chat import ChatRequest, ChatResponse, HealthResponse
 from app.services.chat_service import ChatService
 from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
+from app.services.compression_service import CompressionService
 import os
 import json
 import asyncio
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+
+def get_compression_service():
+    """Get CompressionService instance"""
+    return CompressionService()
 
 
 # Dependency injection for services
@@ -86,7 +92,8 @@ async def chat_stream(
     request: ChatRequest,
     background_tasks: BackgroundTasks,
     chat_service: ChatService = Depends(get_chat_service),
-    session_service: SessionService = Depends(get_session_service)
+    session_service: SessionService = Depends(get_session_service),
+    compression_service: CompressionService = Depends(get_compression_service)
 ):
     """
     Streaming chat endpoint with RAG support and user profile personalization
@@ -130,8 +137,22 @@ async def chat_stream(
                 # Send as Server-Sent Event format
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
 
-            # Send completion signal
-            yield f"data: {json.dumps({'done': True})}\n\n"
+            # Check if compression is needed
+            compression_needed = False
+            total_tokens = None
+            if request.session_id:
+                try:
+                    compression_needed = await compression_service.should_trigger_compression(request.session_id)
+                    # Get session to retrieve total tokens
+                    from app.db import db
+                    session = await db.chatsession.find_unique(where={"id": request.session_id})
+                    if session:
+                        total_tokens = session.totalTokens
+                except Exception as e:
+                    print(f"⚠️ Error checking compression: {e}")
+
+            # Send completion signal with metadata
+            yield f"data: {json.dumps({'done': True, 'compression_needed': compression_needed, 'total_tokens': total_tokens})}\n\n"
 
         # Background task to save assistant message after stream completes
         async def save_assistant_message():

@@ -67,6 +67,8 @@ class ChatResponse(BaseModel):
         description="Context chunks retrieved from knowledge base"
     )
     model: str = Field(..., description="OpenAI model used")
+    compression_needed: bool = Field(default=False, description="Whether compression is recommended")
+    total_tokens: Optional[int] = Field(default=None, description="Total conversation tokens")
 
     class Config:
         json_schema_extra = {
