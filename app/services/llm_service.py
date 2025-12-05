@@ -3,7 +3,7 @@ Unified LLM Service - Supports OpenAI and Anthropic
 Environment-based provider switching with tiered model routing
 """
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, AsyncGenerator
 from openai import OpenAI
 from anthropic import Anthropic
 
@@ -112,3 +112,67 @@ class LLMService:
             },
             "cost": cost
         }
+
+    async def generate_response_stream(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 500
+    ) -> AsyncGenerator[str, None]:
+        """
+        Generate streaming response from LLM
+
+        Yields individual text chunks as they arrive
+        """
+        if self.provider == "anthropic":
+            async for chunk in self._generate_anthropic_stream(messages, temperature, max_tokens):
+                yield chunk
+        else:
+            async for chunk in self._generate_openai_stream(messages, temperature, max_tokens):
+                yield chunk
+
+    async def _generate_anthropic_stream(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int
+    ) -> AsyncGenerator[str, None]:
+        """Stream responses from Anthropic"""
+        system_msg = None
+        conv = []
+
+        for msg in messages:
+            if msg["role"] == "system":
+                system_msg = msg["content"]
+            else:
+                conv.append(msg)
+
+        # Anthropic streaming
+        with self.anthropic.messages.stream(
+            model=self.model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_msg or "",
+            messages=conv
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+
+    async def _generate_openai_stream(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int
+    ) -> AsyncGenerator[str, None]:
+        """Stream responses from OpenAI"""
+        stream = self.openai.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True
+        )
+
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content

@@ -60,8 +60,11 @@ class RAGService:
         context_chunks = []
         for result in results:
             if result.score >= score_threshold:
+                # Get text from payload (stored as "text" by ingestion service)
+                text_content = result.payload.get("text", result.payload.get("content", ""))
                 context_chunks.append({
-                    "content": result.payload.get("content", ""),
+                    "content": text_content,
+                    "text": text_content,  # Include both for compatibility
                     "dimension": result.payload.get("dimension_name", ""),
                     "section": result.payload.get("section", ""),
                     "title": result.payload.get("title", ""),

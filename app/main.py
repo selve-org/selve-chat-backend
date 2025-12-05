@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import os
 
-from app.routers import chat
+from app.routers import chat, compression, ingestion, sessions
 from app.db import connect_db, disconnect_db
 
 # Load environment variables
@@ -46,6 +46,9 @@ app.add_middleware(
 
 # Include routers
 app.include_router(chat.router)
+app.include_router(compression.router)
+app.include_router(ingestion.router)
+app.include_router(sessions.router)
 
 
 @app.get("/")

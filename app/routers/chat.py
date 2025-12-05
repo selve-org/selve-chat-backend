@@ -2,10 +2,12 @@
 Chat API Router
 """
 from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.responses import StreamingResponse
 from app.models.chat import ChatRequest, ChatResponse, HealthResponse
 from app.services.chat_service import ChatService
 from app.services.rag_service import RAGService
 import os
+import json
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -55,6 +57,55 @@ async def chat(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating response: {str(e)}"
+        )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    request: ChatRequest,
+    chat_service: ChatService = Depends(get_chat_service)
+):
+    """
+    Streaming chat endpoint with RAG support and user profile personalization
+
+    Returns Server-Sent Events (SSE) stream of response chunks
+    """
+    try:
+        # Convert Pydantic messages to dict format
+        conversation_history = None
+        if request.conversation_history:
+            conversation_history = [
+                {"role": msg.role, "content": msg.content}
+                for msg in request.conversation_history
+            ]
+
+        # Generate streaming response
+        async def generate():
+            async for chunk in chat_service.generate_response_stream(
+                message=request.message,
+                conversation_history=conversation_history,
+                use_rag=request.use_rag,
+                clerk_user_id=getattr(request, 'clerk_user_id', None)
+            ):
+                # Send as Server-Sent Event format
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+            # Send completion signal
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating streaming response: {str(e)}"
         )
 
 
