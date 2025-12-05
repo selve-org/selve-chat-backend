@@ -23,12 +23,13 @@ class MemorySearchService:
         self.collection_name = "episodic_memories"
         self.embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
         self.embedding_dimension = 1536  # text-embedding-3-small dimension
-
-        # Ensure collection exists
-        self._ensure_collection_exists()
+        self._collection_initialized = False
 
     def _ensure_collection_exists(self):
-        """Create the episodic memories collection if it doesn't exist"""
+        """Create the episodic memories collection if it doesn't exist (lazy initialization)"""
+        if self._collection_initialized:
+            return
+
         try:
             collections = self.qdrant.get_collections().collections
             collection_names = [c.name for c in collections]
@@ -42,8 +43,11 @@ class MemorySearchService:
                     )
                 )
                 print(f"✅ Created Qdrant collection: {self.collection_name}")
+
+            self._collection_initialized = True
         except Exception as e:
             print(f"⚠️ Error ensuring collection exists: {e}")
+            # Don't set initialized flag so it retries next time
 
     def generate_embedding(self, text: str) -> List[float]:
         """
@@ -72,6 +76,9 @@ class MemorySearchService:
             True if successful, False otherwise
         """
         try:
+            # Ensure Qdrant collection exists
+            self._ensure_collection_exists()
+
             # Fetch memory from database
             memory = await db.episodicmemory.find_unique(where={"id": memory_id})
 
@@ -146,6 +153,9 @@ class MemorySearchService:
             List of matching memories with metadata
         """
         try:
+            # Ensure Qdrant collection exists
+            self._ensure_collection_exists()
+
             # Generate query embedding
             query_embedding = self.generate_embedding(query)
 
@@ -208,6 +218,9 @@ class MemorySearchService:
             List of similar memories
         """
         try:
+            # Ensure Qdrant collection exists
+            self._ensure_collection_exists()
+
             # Get the memory's embedding from Qdrant
             memory_point = self.qdrant.retrieve(
                 collection_name=self.collection_name,
