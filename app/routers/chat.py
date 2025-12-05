@@ -111,11 +111,14 @@ async def chat_stream(
 
         # Save user message to session immediately if session_id provided
         if request.session_id:
-            await session_service.add_message(
-                session_id=request.session_id,
-                role="user",
-                content=request.message
-            )
+            try:
+                await session_service.add_message(
+                    session_id=request.session_id,
+                    role="user",
+                    content=request.message
+                )
+            except Exception as e:
+                print(f"⚠️ Error saving user message to session: {e}")
 
         # Container to store accumulated response
         class ResponseContainer:
@@ -204,6 +207,9 @@ async def chat_stream(
         )
 
     except Exception as e:
+        import traceback
+        print(f"❌ Chat stream error: {e}")
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating streaming response: {str(e)}"
