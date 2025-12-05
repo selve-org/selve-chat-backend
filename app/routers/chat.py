@@ -123,7 +123,8 @@ async def chat_stream(
                 message=request.message,
                 conversation_history=conversation_history,
                 use_rag=request.use_rag,
-                clerk_user_id=request.clerk_user_id
+                clerk_user_id=request.clerk_user_id,
+                selve_scores=request.selve_scores
             ):
                 response_container.content += chunk
                 # Send as Server-Sent Event format

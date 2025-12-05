@@ -45,6 +45,44 @@ Guidelines:
 
 Remember: All personalities have value. There are no "good" or "bad" scores - only different ways of being human."""
 
+    def _format_scores_for_context(self, scores: Dict[str, float]) -> str:
+        """Format SELVE scores into context for personalization"""
+        dimension_descriptions = {
+            "LUMEN": "Mindful Curiosity (social energy and recharging)",
+            "AETHER": "Rational Reflection (information processing)",
+            "ORPHEUS": "Compassionate Connection (decision-making approach)",
+            "ORIN": "Structured Harmony (planning and structure)",
+            "LYRA": "Creative Expression (openness to experiences)",
+            "VARA": "Purposeful Commitment (emotional stability)",
+            "CHRONOS": "Adaptive Spontaneity (agreeableness and cooperation)",
+            "KAEL": "Bold Resilience (conscientiousness and discipline)"
+        }
+
+        # Identify strongest and weakest dimensions
+        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        top_3 = sorted_scores[:3]
+
+        context_parts = [
+            "USER'S SELVE PROFILE:",
+            ""
+        ]
+
+        # Add top 3 dimensions
+        context_parts.append("Strongest dimensions:")
+        for dim, score in top_3:
+            desc = dimension_descriptions.get(dim, dim)
+            context_parts.append(f"  • {dim}: {int(score)}/100 - {desc}")
+
+        context_parts.extend([
+            "",
+            "When responding:",
+            "- Reference their specific scores when relevant to the question",
+            "- Provide personalized insights based on their profile",
+            "- Help them understand how their scores influence their behavior"
+        ])
+
+        return "\n".join(context_parts)
+
     async def generate_conversation_title(self, first_message: str) -> str:
         """Generate a concise title for a conversation based on the first message"""
         try:
@@ -224,7 +262,8 @@ Return ONLY the title, nothing else. Make it specific and meaningful."""
         message: str,
         conversation_history: List[Dict[str, str]] = None,
         use_rag: bool = True,
-        clerk_user_id: Optional[str] = None
+        clerk_user_id: Optional[str] = None,
+        selve_scores: Optional[Dict[str, float]] = None
     ) -> AsyncGenerator[str, None]:
         """
         Generate a streaming chat response with optional RAG context
@@ -236,16 +275,15 @@ Return ONLY the title, nothing else. Make it specific and meaningful."""
             conversation_history: Previous messages
             use_rag: Whether to retrieve context from RAG
             clerk_user_id: Clerk user ID for profile personalization
+            selve_scores: User's SELVE personality scores for personalization
 
         Yields:
             str: Individual text chunks from the LLM response
         """
-        # Retrieve user profile for personalization
+        # Build user context from SELVE scores
         user_context = None
-        if clerk_user_id:
-            profile = await self.user_profile_service.get_user_profile(clerk_user_id)
-            if profile and profile.get("has_assessment"):
-                user_context = self.user_profile_service.format_profile_for_context(profile)
+        if selve_scores:
+            user_context = self._format_scores_for_context(selve_scores)
 
         # Retrieve episodic memories for conversation continuity
         memory_context = None

@@ -30,6 +30,10 @@ class ChatRequest(BaseModel):
         default=None,
         description="Clerk user ID for personalization"
     )
+    selve_scores: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="User's SELVE personality scores for personalization"
+    )
 
     class Config:
         json_schema_extra = {
