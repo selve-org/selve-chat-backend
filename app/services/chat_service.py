@@ -45,6 +45,32 @@ Guidelines:
 
 Remember: All personalities have value. There are no "good" or "bad" scores - only different ways of being human."""
 
+    async def generate_conversation_title(self, first_message: str) -> str:
+        """Generate a concise title for a conversation based on the first message"""
+        try:
+            prompt = f"""Generate a short, descriptive title (max 5 words) for a conversation that starts with this message:
+
+"{first_message}"
+
+Return ONLY the title, nothing else. Make it specific and meaningful."""
+
+            response = await self.llm_service.generate_response(
+                messages=[{"role": "user", "content": prompt}],
+                model="gpt-4o-mini",
+                temperature=0.7,
+                max_tokens=20
+            )
+
+            title = response.strip().strip('"').strip("'")
+            # Truncate if too long
+            if len(title) > 50:
+                title = title[:47] + "..."
+
+            return title
+        except Exception as e:
+            # Fallback to truncated first message
+            return first_message[:50] + "..." if len(first_message) > 50 else first_message
+
     async def _analyze_and_update_state(
         self,
         session_id: Optional[str],

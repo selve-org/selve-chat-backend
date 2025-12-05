@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 from app.services.session_service import SessionService
+from app.services.chat_service import ChatService
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -15,6 +16,10 @@ class CreateSessionRequest(BaseModel):
     userId: str
     clerkUserId: str
     title: Optional[str] = None
+
+
+class GenerateTitleRequest(BaseModel):
+    message: str
 
 
 class SessionSummaryResponse(BaseModel):
@@ -51,6 +56,11 @@ class UpdateSessionTitleRequest(BaseModel):
 def get_session_service():
     """Get SessionService instance"""
     return SessionService()
+
+
+def get_chat_service():
+    """Get ChatService instance"""
+    return ChatService()
 
 
 @router.post("/", response_model=SessionDetailResponse)
@@ -220,4 +230,48 @@ async def archive_session(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error archiving session: {str(e)}"
+        )
+
+
+@router.post("/{session_id}/generate-title", response_model=SessionDetailResponse)
+async def generate_and_update_title(
+    session_id: str,
+    request: GenerateTitleRequest,
+    chat_service: ChatService = Depends(get_chat_service),
+    session_service: SessionService = Depends(get_session_service)
+):
+    """
+    Auto-generate a title for the conversation based on the first message
+
+    Args:
+        session_id: Session ID to update
+        request: Contains the first user message
+
+    Returns:
+        Updated session with new title
+    """
+    try:
+        # Generate title using LLM
+        title = await chat_service.generate_conversation_title(request.message)
+
+        # Update session with generated title
+        session = await session_service.update_session_title(
+            session_id=session_id,
+            title=title
+        )
+
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session not found: {session_id}"
+            )
+
+        return SessionDetailResponse(**session)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating title: {str(e)}"
         )
