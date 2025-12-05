@@ -178,16 +178,22 @@ Return ONLY the title, nothing else. Make it specific and meaningful."""
         # Retrieve episodic memories for conversation continuity
         memory_context = None
         if clerk_user_id:
-            memories = await self.compression_service.get_user_memories(clerk_user_id, limit=3)
-            if memories:
-                memory_context = self.compression_service.format_memories_for_context(memories)
+            try:
+                memories = await self.compression_service.get_user_memories(clerk_user_id, limit=3)
+                if memories:
+                    memory_context = self.compression_service.format_memories_for_context(memories)
+            except Exception as e:
+                print(f"⚠️ Error retrieving episodic memories: {e}")
 
         # Retrieve semantic memory (long-term patterns)
         semantic_context = None
         if clerk_user_id:
-            semantic_mem = await self.semantic_memory_service.get_user_semantic_memory(clerk_user_id=clerk_user_id)
-            if semantic_mem:
-                semantic_context = self.semantic_memory_service.format_semantic_memory_for_context(semantic_mem)
+            try:
+                semantic_mem = await self.semantic_memory_service.get_user_semantic_memory(clerk_user_id=clerk_user_id)
+                if semantic_mem:
+                    semantic_context = self.semantic_memory_service.format_semantic_memory_for_context(semantic_mem)
+            except Exception as e:
+                print(f"⚠️ Error retrieving semantic memory: {e}")
 
         # Retrieve relevant context if RAG is enabled
         context_info = None
@@ -288,16 +294,22 @@ Return ONLY the title, nothing else. Make it specific and meaningful."""
         # Retrieve episodic memories for conversation continuity
         memory_context = None
         if clerk_user_id:
-            memories = await self.compression_service.get_user_memories(clerk_user_id, limit=3)
-            if memories:
-                memory_context = self.compression_service.format_memories_for_context(memories)
+            try:
+                memories = await self.compression_service.get_user_memories(clerk_user_id, limit=3)
+                if memories:
+                    memory_context = self.compression_service.format_memories_for_context(memories)
+            except Exception as e:
+                print(f"⚠️ Error retrieving episodic memories: {e}")
 
         # Retrieve semantic memory (long-term patterns)
         semantic_context = None
         if clerk_user_id:
-            semantic_mem = await self.semantic_memory_service.get_user_semantic_memory(clerk_user_id=clerk_user_id)
-            if semantic_mem:
-                semantic_context = self.semantic_memory_service.format_semantic_memory_for_context(semantic_mem)
+            try:
+                semantic_mem = await self.semantic_memory_service.get_user_semantic_memory(clerk_user_id=clerk_user_id)
+                if semantic_mem:
+                    semantic_context = self.semantic_memory_service.format_semantic_memory_for_context(semantic_mem)
+            except Exception as e:
+                print(f"⚠️ Error retrieving semantic memory: {e}")
 
         # Retrieve relevant context if RAG is enabled
         context_info = None
