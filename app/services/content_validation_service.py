@@ -256,7 +256,7 @@ Be thorough and objective."""
         try:
             validations = await db.contentvalidation.find_many(
                 where={"status": "needs_revision"},
-                order_by={"createdAt": "desc"},
+                order={"createdAt": "desc"},
                 take=limit
             )
 

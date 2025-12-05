@@ -74,7 +74,7 @@ Set confidence based on pattern strength (0.5-0.7 = emerging, 0.7-0.9 = establis
                         "clerkUserId": clerk_user_id
                     }
                 },
-                order_by={"spanEnd": "desc"},
+                order={"spanEnd": "desc"},
                 include={"session": True}
             )
 

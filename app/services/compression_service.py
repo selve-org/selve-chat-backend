@@ -278,7 +278,7 @@ Be concise but preserve important details. Focus on what matters for future conv
         """
         memories = await db.episodicmemory.find_many(
             where={"sessionId": session_id},
-            order_by={"spanStart": "asc"}
+            order={"spanStart": "asc"}
         )
 
         return [
@@ -340,7 +340,7 @@ Be concise but preserve important details. Focus on what matters for future conv
                     "clerkUserId": clerk_user_id
                 }
             },
-            order_by={"spanEnd": "desc"},
+            order={"spanEnd": "desc"},
             take=limit,
             include={"session": True}
         )

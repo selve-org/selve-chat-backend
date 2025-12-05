@@ -91,7 +91,7 @@ class SessionService:
                 "clerkUserId": clerk_user_id,
                 "status": status
             },
-            order_by={"lastMessageAt": "desc"},
+            order={"lastMessageAt": "desc"},
             take=limit
         )
 
