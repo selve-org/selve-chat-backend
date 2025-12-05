@@ -140,14 +140,19 @@ async def chat_stream(
             # Check if compression is needed
             compression_needed = False
             total_tokens = None
+            session_data = None
             if request.session_id:
                 try:
                     compression_needed = await compression_service.should_trigger_compression(request.session_id)
-                    # Get session to retrieve total tokens
+                    # Get session to retrieve total tokens and user ID
                     from app.db import db
                     session = await db.chatsession.find_unique(where={"id": request.session_id})
                     if session:
                         total_tokens = session.totalTokens
+                        session_data = {
+                            "userId": session.userId,
+                            "clerkUserId": session.clerkUserId
+                        }
                 except Exception as e:
                     print(f"⚠️ Error checking compression: {e}")
 
@@ -165,9 +170,29 @@ async def chat_stream(
                     content=response_container.content
                 )
 
-        # Register background task
+        # Background task to trigger compression if needed
+        async def trigger_compression_if_needed():
+            # Wait for message to be saved first
+            await asyncio.sleep(1.0)
+            if compression_needed and request.session_id and session_data:
+                try:
+                    result = await compression_service.compress_conversation(
+                        session_id=request.session_id,
+                        user_id=session_data["userId"],
+                        clerk_user_id=session_data["clerkUserId"]
+                    )
+                    if result.get("compressed"):
+                        print(f"✅ Auto-compressed session {request.session_id}: {result['messages_compressed']} messages → {result['tokens_saved']} tokens saved")
+                    else:
+                        print(f"⚠️ Compression skipped for session {request.session_id}: {result.get('error', 'Unknown error')}")
+                except Exception as e:
+                    print(f"❌ Auto-compression failed for session {request.session_id}: {e}")
+
+        # Register background tasks
         if request.session_id:
             background_tasks.add_task(save_assistant_message)
+            if compression_needed and session_data:
+                background_tasks.add_task(trigger_compression_if_needed)
 
         return StreamingResponse(
             generate(),
