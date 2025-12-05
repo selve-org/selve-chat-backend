@@ -22,6 +22,14 @@ class ChatRequest(BaseModel):
         default=True,
         description="Whether to use RAG context retrieval"
     )
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Session ID to save messages to"
+    )
+    clerk_user_id: Optional[str] = Field(
+        default=None,
+        description="Clerk user ID for personalization"
+    )
 
     class Config:
         json_schema_extra = {
