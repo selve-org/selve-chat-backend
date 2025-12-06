@@ -1,11 +1,30 @@
 """
 Unified LLM Service - Supports OpenAI and Anthropic
 Environment-based provider switching with tiered model routing
+GPT-5 support with reasoning_effort and text_verbosity parameters
+Retry logic with exponential backoff
 """
 import os
-from typing import List, Dict, Any, AsyncGenerator
-from openai import OpenAI
-from anthropic import Anthropic
+import time
+import asyncio
+from typing import List, Dict, Any, AsyncGenerator, Optional, Callable, TypeVar
+from openai import OpenAI, APIError, RateLimitError, APIConnectionError
+from anthropic import Anthropic, APIError as AnthropicAPIError
+
+
+# Type variable for generic retry function
+T = TypeVar('T')
+
+
+class RetryConfig:
+    """Configuration for retry behavior"""
+    def __init__(self):
+        self.max_retries = int(os.getenv("MAX_RETRIES", "3"))
+        self.initial_delay = float(os.getenv("INITIAL_RETRY_DELAY", "2.0"))
+        self.max_delay = float(os.getenv("MAX_RETRY_DELAY", "30.0"))
+        self.backoff_multiplier = 2.0
+        self.enable_fallback = os.getenv("ENABLE_FALLBACK", "true").lower() == "true"
+        self.timeout = float(os.getenv("API_TIMEOUT", "60"))
 
 
 class LLMService:
@@ -13,47 +32,229 @@ class LLMService:
     Unified service for LLM interactions with dual provider support
 
     Supports:
-    - OpenAI (GPT-4o-mini, GPT-5-nano)
+    - OpenAI (GPT-4o-mini, GPT-5-nano, GPT-5-mini, GPT-5, GPT-5.1, GPT-5.1-nano)
     - Anthropic (Claude Haiku 4.5, Sonnet 4.5, Opus 4.5)
 
     Environment variables:
-    - LLM_PROVIDER: "openai" | "anthropic" (default: "anthropic")
+    - LLM_PROVIDER: "openai" | "anthropic" (default: "openai")
+    - OPENAI_MODEL: Model to use (default: "gpt-5-mini")
     - ANTHROPIC_MODEL: Model to use (default: "claude-3-5-haiku-20241022")
-    - OPENAI_MODEL: Model to use (default: "gpt-4o-mini")
+    - OPENAI_REASONING_EFFORT: "minimal" | "low" | "medium" | "high" (default: "high")
+    - OPENAI_TEXT_VERBOSITY: "low" | "medium" | "high" (default: "medium")
+    - ENABLE_DYNAMIC_SWITCHING: Enable dynamic model selection (default: "false")
     """
 
     MODEL_PRICING = {
+        # Anthropic models
         "claude-3-5-haiku-20241022": (0.80, 4.00),
         "claude-3-5-sonnet-20241022": (3.00, 15.00),
         "claude-opus-4-20250514": (15.00, 75.00),
+        # OpenAI GPT-4 models
         "gpt-4o-mini": (0.150, 0.600),
+        # OpenAI GPT-5 models
         "gpt-5-nano": (0.200, 0.800),
+        "gpt-5-mini": (0.400, 1.600),
+        "gpt-5": (2.00, 8.00),
+        "gpt-5.1-nano": (0.250, 1.000),
+        "gpt-5.1": (2.50, 10.00),
+    }
+
+    # GPT-5 models that support reasoning_effort parameter
+    GPT5_REASONING_MODELS = {
+        "gpt-5-nano", "gpt-5-mini", "gpt-5", "gpt-5.1-nano", "gpt-5.1"
     }
 
     def __init__(self):
-        self.provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+        self.provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        self.enable_dynamic_switching = os.getenv("ENABLE_DYNAMIC_SWITCHING", "false").lower() == "true"
         
+        # Retry configuration
+        self.retry_config = RetryConfig()
+        
+        # GPT-5 specific parameters
+        self.reasoning_effort = os.getenv("OPENAI_REASONING_EFFORT", "high")
+        self.text_verbosity = os.getenv("OPENAI_TEXT_VERBOSITY", "medium")
+        
+        # Model tier configuration for dynamic switching
+        self.tier_models = {
+            1: os.getenv("TIER_1_MODEL", "gpt-5.1-nano"),   # Simple queries
+            2: os.getenv("TIER_2_MODEL", "gpt-5-mini"),     # Standard (default)
+            3: os.getenv("TIER_3_MODEL", "gpt-5.1"),        # Complex queries
+        }
+        
+        # Initialize clients based on provider
         if self.provider == "anthropic":
             self.anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
             self.model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
-        elif self.provider == "openai":
-            self.openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            self.openai = None
         else:
-            raise ValueError(f"Invalid LLM_PROVIDER: {self.provider}")
+            # Default to OpenAI with GPT-5-mini
+            self.openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            self.model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
+            # Also init Anthropic as fallback
+            anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+            if anthropic_key:
+                self.anthropic = Anthropic(api_key=anthropic_key)
+            else:
+                self.anthropic = None
+
+    def _with_retry(self, func: Callable[[], T], operation: str = "LLM call") -> T:
+        """
+        Execute a function with exponential backoff retry logic.
+        
+        Args:
+            func: The function to execute
+            operation: Description for logging
+            
+        Returns:
+            The result of the function
+            
+        Raises:
+            The last exception if all retries fail
+        """
+        last_exception = None
+        delay = self.retry_config.initial_delay
+        
+        for attempt in range(self.retry_config.max_retries + 1):
+            try:
+                return func()
+            except (RateLimitError, APIConnectionError) as e:
+                last_exception = e
+                if attempt < self.retry_config.max_retries:
+                    print(f"⚠️ {operation} failed (attempt {attempt + 1}/{self.retry_config.max_retries + 1}): {e}")
+                    print(f"   Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+                    delay = min(delay * self.retry_config.backoff_multiplier, self.retry_config.max_delay)
+            except APIError as e:
+                # Don't retry on 4xx errors (except rate limit)
+                if e.status_code and 400 <= e.status_code < 500 and e.status_code != 429:
+                    raise
+                last_exception = e
+                if attempt < self.retry_config.max_retries:
+                    print(f"⚠️ {operation} failed (attempt {attempt + 1}/{self.retry_config.max_retries + 1}): {e}")
+                    print(f"   Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+                    delay = min(delay * self.retry_config.backoff_multiplier, self.retry_config.max_delay)
+            except AnthropicAPIError as e:
+                last_exception = e
+                if attempt < self.retry_config.max_retries:
+                    print(f"⚠️ {operation} failed (attempt {attempt + 1}/{self.retry_config.max_retries + 1}): {e}")
+                    print(f"   Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+                    delay = min(delay * self.retry_config.backoff_multiplier, self.retry_config.max_delay)
+        
+        # All retries exhausted - try fallback if enabled
+        if self.retry_config.enable_fallback and last_exception:
+            print(f"❌ All retries exhausted for {operation}. Last error: {last_exception}")
+        
+        raise last_exception
+
+    async def _with_retry_async(self, coro_func: Callable, operation: str = "LLM call"):
+        """
+        Execute an async function with exponential backoff retry logic.
+        
+        Args:
+            coro_func: A callable that returns a coroutine
+            operation: Description for logging
+            
+        Returns:
+            The result of the coroutine
+        """
+        last_exception = None
+        delay = self.retry_config.initial_delay
+        
+        for attempt in range(self.retry_config.max_retries + 1):
+            try:
+                return await coro_func()
+            except (RateLimitError, APIConnectionError) as e:
+                last_exception = e
+                if attempt < self.retry_config.max_retries:
+                    print(f"⚠️ {operation} failed (attempt {attempt + 1}/{self.retry_config.max_retries + 1}): {e}")
+                    print(f"   Retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    delay = min(delay * self.retry_config.backoff_multiplier, self.retry_config.max_delay)
+            except APIError as e:
+                if e.status_code and 400 <= e.status_code < 500 and e.status_code != 429:
+                    raise
+                last_exception = e
+                if attempt < self.retry_config.max_retries:
+                    print(f"⚠️ {operation} failed (attempt {attempt + 1}/{self.retry_config.max_retries + 1}): {e}")
+                    print(f"   Retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    delay = min(delay * self.retry_config.backoff_multiplier, self.retry_config.max_delay)
+            except AnthropicAPIError as e:
+                last_exception = e
+                if attempt < self.retry_config.max_retries:
+                    print(f"⚠️ {operation} failed (attempt {attempt + 1}/{self.retry_config.max_retries + 1}): {e}")
+                    print(f"   Retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    delay = min(delay * self.retry_config.backoff_multiplier, self.retry_config.max_delay)
+        
+        if self.retry_config.enable_fallback and last_exception:
+            print(f"❌ All retries exhausted for {operation}. Last error: {last_exception}")
+        
+        raise last_exception
+
+    def _is_gpt5_model(self, model: str) -> bool:
+        """Check if model supports GPT-5 reasoning parameters"""
+        return model in self.GPT5_REASONING_MODELS
+    
+    def _get_gpt5_extra_body(self) -> Dict[str, Any]:
+        """Build extra_body params for GPT-5 models"""
+        return {
+            "reasoning_effort": self.reasoning_effort,
+            "text": {
+                "verbosity": self.text_verbosity
+            }
+        }
+
+    def select_model_for_query(self, query: str, context: Optional[Dict] = None) -> str:
+        """
+        Select appropriate model based on query complexity.
+        Only used when ENABLE_DYNAMIC_SWITCHING is true.
+        """
+        if not self.enable_dynamic_switching:
+            return self.model
+        
+        # Simple heuristics for model selection
+        query_lower = query.lower()
+        word_count = len(query.split())
+        
+        # Simple patterns -> Tier 1 (nano model)
+        simple_patterns = ["what is", "tell me about", "explain", "define", "who am i"]
+        if word_count < 15 and any(p in query_lower for p in simple_patterns):
+            return self.tier_models[1]
+        
+        # Complex patterns -> Tier 3 (full model)
+        complex_patterns = [
+            "compare", "analyze", "deep dive", "comprehensive",
+            "how do i improve", "career advice", "relationship",
+            "multiple", "steps", "plan", "strategy"
+        ]
+        if word_count > 30 or any(p in query_lower for p in complex_patterns):
+            return self.tier_models[3]
+        
+        # Default -> Tier 2 (mini model)
+        return self.tier_models[2]
 
     def generate_response(
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 500
+        max_tokens: int = 500,
+        model: Optional[str] = None
     ) -> Dict[str, Any]:
+        """Generate a response using the configured LLM provider"""
+        model = model or self.model
+        
         if self.provider == "anthropic":
-            return self._generate_anthropic(messages, temperature, max_tokens)
+            return self._generate_anthropic(messages, temperature, max_tokens, model)
         else:
-            return self._generate_openai(messages, temperature, max_tokens)
+            return self._generate_openai(messages, temperature, max_tokens, model)
 
-    def _generate_anthropic(self, messages, temperature, max_tokens):
+    def _generate_anthropic(self, messages, temperature, max_tokens, model: str = None):
+        """Generate response using Anthropic Claude with retry logic"""
+        model = model or self.model
         system_msg = None
         conv = []
         
@@ -63,22 +264,25 @@ class LLMService:
             else:
                 conv.append(msg)
         
-        response = self.anthropic.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system_msg or "",
-            messages=conv
-        )
+        def make_request():
+            return self.anthropic.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_msg or "",
+                messages=conv
+            )
+        
+        response = self._with_retry(make_request, f"Anthropic ({model})")
         
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
-        input_price, output_price = self.MODEL_PRICING.get(self.model, (0, 0))
+        input_price, output_price = self.MODEL_PRICING.get(model, (0, 0))
         cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
         
         return {
             "content": response.content[0].text,
-            "model": self.model,
+            "model": model,
             "provider": "anthropic",
             "usage": {
                 "input_tokens": input_tokens,
@@ -88,23 +292,38 @@ class LLMService:
             "cost": cost
         }
 
-    def _generate_openai(self, messages, temperature, max_tokens):
-        response = self.openai.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
+    def _generate_openai(self, messages, temperature, max_tokens, model: str = None):
+        """Generate response using OpenAI - supports GPT-5 reasoning parameters with retry logic"""
+        model = model or self.model
+        
+        # Build request params
+        request_params = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        # Add GPT-5 specific parameters if applicable
+        if self._is_gpt5_model(model):
+            request_params["extra_body"] = self._get_gpt5_extra_body()
+        
+        def make_request():
+            return self.openai.chat.completions.create(**request_params)
+        
+        response = self._with_retry(make_request, f"OpenAI ({model})")
         
         input_tokens = response.usage.prompt_tokens
         output_tokens = response.usage.completion_tokens
-        input_price, output_price = self.MODEL_PRICING.get(self.model, (0, 0))
+        input_price, output_price = self.MODEL_PRICING.get(model, (0, 0))
         cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
         
         return {
             "content": response.choices[0].message.content,
-            "model": self.model,
+            "model": model,
             "provider": "openai",
+            "reasoning_effort": self.reasoning_effort if self._is_gpt5_model(model) else None,
+            "text_verbosity": self.text_verbosity if self._is_gpt5_model(model) else None,
             "usage": {
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
@@ -117,27 +336,32 @@ class LLMService:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 500
+        max_tokens: int = 500,
+        model: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """
         Generate streaming response from LLM
 
         Yields individual text chunks as they arrive
         """
+        model = model or self.model
+        
         if self.provider == "anthropic":
-            async for chunk in self._generate_anthropic_stream(messages, temperature, max_tokens):
+            async for chunk in self._generate_anthropic_stream(messages, temperature, max_tokens, model):
                 yield chunk
         else:
-            async for chunk in self._generate_openai_stream(messages, temperature, max_tokens):
+            async for chunk in self._generate_openai_stream(messages, temperature, max_tokens, model):
                 yield chunk
 
     async def _generate_anthropic_stream(
         self,
         messages: List[Dict[str, str]],
         temperature: float,
-        max_tokens: int
+        max_tokens: int,
+        model: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """Stream responses from Anthropic"""
+        model = model or self.model
         system_msg = None
         conv = []
 
@@ -149,7 +373,7 @@ class LLMService:
 
         # Anthropic streaming
         with self.anthropic.messages.stream(
-            model=self.model,
+            model=model,
             max_tokens=max_tokens,
             temperature=temperature,
             system=system_msg or "",
@@ -162,16 +386,26 @@ class LLMService:
         self,
         messages: List[Dict[str, str]],
         temperature: float,
-        max_tokens: int
+        max_tokens: int,
+        model: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
-        """Stream responses from OpenAI"""
-        stream = self.openai.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True
-        )
+        """Stream responses from OpenAI - supports GPT-5 reasoning parameters"""
+        model = model or self.model
+        
+        # Build request params
+        request_params = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True
+        }
+        
+        # Add GPT-5 specific parameters if applicable
+        if self._is_gpt5_model(model):
+            request_params["extra_body"] = self._get_gpt5_extra_body()
+        
+        stream = self.openai.chat.completions.create(**request_params)
 
         for chunk in stream:
             if chunk.choices[0].delta.content:

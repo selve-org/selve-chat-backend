@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import os
+import logging
 
 from app.routers import chat, compression, ingestion, sessions, users
 from app.db import connect_db, disconnect_db
@@ -14,15 +15,39 @@ from app.db import connect_db, disconnect_db
 # Load environment variables
 load_dotenv()
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ASCII Art Banner
+SELVE_BANNER = """
+███████╗███████╗██╗░░░░░██╗░░░██╗███████╗░░░░░░░█████╗░██╗░░██╗░█████╗░████████╗
+██╔════╝██╔════╝██║░░░░░██║░░░██║██╔════╝░░░░░░██╔══██╗██║░░██║██╔══██╗╚══██╔══╝
+███████╗█████╗░░██║░░░░░╚██╗░██╔╝█████╗░░█████╗██║░░╚═╝███████║███████║░░░██║░░░
+╚════██║██╔══╝░░██║░░░░░░╚████╔╝░██╔══╝░░╚════╝██║░░██╗██╔══██║██╔══██║░░░██║░░░
+███████║███████╗███████╗░░╚██╔╝░░███████╗░░░░░░╚█████╔╝██║░░██║██║░░██║░░░██║░░░
+╚══════╝╚══════╝╚══════╝░░░╚═╝░░░╚══════╝░░░░░░░╚════╝░╚═╝░░╚═╝╚═╝░░╚═╝░░░╚═╝░░░
+
+              ✨ Discover Your True Self ✨
+     Self-Exploration • Learning • Validation • Evolution
+                      https://selve.me
+"""
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle"""
     # Startup
+    print(SELVE_BANNER)
+    logger.info("🚀 Starting SELVE Chatbot Backend...")
     await connect_db()
+    logger.info("✅ Database connected")
+    logger.info(f"📡 API running on port {os.getenv('PORT', '8000')}")
     yield
     # Shutdown
+    logger.info("👋 Shutting down SELVE Chatbot Backend...")
     await disconnect_db()
+    logger.info("✅ Database disconnected")
 
 
 # Create FastAPI app

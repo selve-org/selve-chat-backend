@@ -130,18 +130,24 @@ async def chat_stream(
 
         response_container = ResponseContainer()
 
-        # Generate streaming response
+        # Generate streaming response with status events
         async def generate():
-            async for chunk in chat_service.generate_response_stream(
+            async for event in chat_service.generate_response_stream(
                 message=request.message,
                 conversation_history=conversation_history,
                 use_rag=request.use_rag,
                 clerk_user_id=request.clerk_user_id,
-                selve_scores=request.selve_scores
+                selve_scores=request.selve_scores,
+                emit_status=True
             ):
-                response_container.content += chunk
-                # Send as Server-Sent Event format
-                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                # Check if this is a status event (dict) or text chunk (str)
+                if isinstance(event, dict):
+                    # Status event for thinking UI
+                    yield f"data: {json.dumps(event)}\n\n"
+                else:
+                    # Text chunk from LLM
+                    response_container.content += event
+                    yield f"data: {json.dumps({'chunk': event})}\n\n"
 
             # Check if compression is needed
             if request.session_id:

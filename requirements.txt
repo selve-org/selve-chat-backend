@@ -25,6 +25,12 @@ prisma==0.11.0
 # CORS and middleware
 python-jose[cryptography]==3.3.0
 
+# LLM Observability
+langfuse==2.56.3
+
+# Content Crawling Tools
+youtube-transcript-api==0.6.2
+
 # Optional: For development
 pytest==7.4.4
 httpx==0.26.0
