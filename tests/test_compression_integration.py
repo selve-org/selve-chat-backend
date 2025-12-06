@@ -171,6 +171,9 @@ class TestMemorySearchService:
     @pytest.mark.asyncio
     async def test_embed_memory(self, memory_search_service, test_session):
         """Test memory embedding"""
+        from datetime import datetime
+        from prisma import Json
+
         session = test_session["session"]
 
         # Create unembedded memory
@@ -180,12 +183,14 @@ class TestMemorySearchService:
                 "sessionId": session.id,
                 "title": "Test Memory",
                 "summary": "This is a test memory about SELVE dimensions.",
-                "keyInsights": ["User shows high LUMEN", "Interested in social aspects"],
-                "unresolvedTopics": [],
+                "keyInsights": Json(["User shows high LUMEN", "Interested in social aspects"]),
+                "unresolvedTopics": Json([]),
                 "emotionalState": "curious",
                 "sourceMessageIds": [],
                 "compressionModel": "gpt-4o-mini",
                 "compressionCost": 0.0001,
+                "spanStart": datetime.utcnow(),
+                "spanEnd": datetime.utcnow(),
                 "embedded": False
             }
         )
@@ -222,6 +227,10 @@ class TestMemorySearchService:
     @pytest.mark.asyncio
     async def test_search_memories_with_user_filter(self, memory_search_service, embedded_memory):
         """Test user-filtered search"""
+        # Verify embedded_memory exists
+        assert embedded_memory is not None
+        print(f"Embedded memory ID: {embedded_memory.id}")
+
         # Search with user filter
         results = await memory_search_service.search_memories(
             query="SELVE personality insights",
@@ -229,11 +238,25 @@ class TestMemorySearchService:
             top_k=5
         )
 
+        print(f"Search returned {len(results)} results")
+        if results:
+            print(f"First result memory_id: {results[0].get('memory_id')}")
+
+        # Should find the embedded memory
+        assert len(results) >= 1
+
         # All results should belong to the test user
         for result in results:
+            print(f"Checking memory_id: {result['memory_id']}")
             memory = await db.episodicmemory.find_unique(
                 where={"id": result["memory_id"]}
             )
+            if memory is None:
+                print(f"⚠️ Memory {result['memory_id']} not found in database!")
+                # List all memories to debug
+                all_memories = await db.episodicmemory.find_many()
+                print(f"All memories in DB: {[m.id for m in all_memories]}")
+            assert memory is not None, f"Memory {result['memory_id']} not found"
             assert memory.userId == "test_user_123"
 
     @pytest.mark.asyncio

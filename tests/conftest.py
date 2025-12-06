@@ -54,10 +54,10 @@ async def test_session(cleanup_session):
     # Cleanup handled by cleanup_session fixture
 
 
-@pytest.fixture
-async def cleanup_session():
-    """Cleanup test sessions after each test"""
-    yield
+async def _cleanup_test_data():
+    """Helper to clean up test data from database and Qdrant"""
+    from app.services.memory_search_service import MemorySearchService
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
 
     # Delete test sessions and related data
     test_sessions = await db.chatsession.find_many(
@@ -68,6 +68,26 @@ async def cleanup_session():
             ]
         }
     )
+
+    # Clean up Qdrant - delete all test user points
+    memory_service = MemorySearchService()
+    try:
+        memory_service._ensure_collection_exists()
+        # Delete all points with user_id containing "test_"
+        memory_service.qdrant.delete(
+            collection_name=memory_service.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="user_id",
+                        match=MatchValue(value="test_user_123")
+                    )
+                ]
+            )
+        )
+        print("✅ Cleaned up Qdrant test points")
+    except Exception as e:
+        print(f"⚠️ Error cleaning up Qdrant: {e}")
 
     for session in test_sessions:
         # Delete messages
@@ -84,3 +104,15 @@ async def cleanup_session():
         await db.chatsession.delete(
             where={"id": session.id}
         )
+
+
+@pytest.fixture
+async def cleanup_session():
+    """Cleanup test sessions before and after each test"""
+    # Clean up before test (remove leftovers from previous runs)
+    await _cleanup_test_data()
+
+    yield
+
+    # Clean up after test
+    await _cleanup_test_data()
