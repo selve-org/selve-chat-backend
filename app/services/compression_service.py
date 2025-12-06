@@ -4,6 +4,7 @@ Preserves conversation narrative while reducing token count
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from prisma import Json
 from app.db import db
 from .llm_service import LLMService
 from .memory_search_service import MemorySearchService
@@ -54,7 +55,9 @@ Your task is to compress a segment of conversation into a concise episodic memor
 4. Any unresolved topics or follow-up items
 5. Behavioral patterns observed
 
-Format your response as JSON with these fields:
+IMPORTANT: You MUST respond with ONLY valid JSON. Do not include any text before or after the JSON object.
+
+Your response must be a valid JSON object with these exact fields:
 {
     "title": "Brief title summarizing this conversation segment",
     "summary": "2-3 paragraph summary of the conversation",
@@ -65,7 +68,8 @@ Format your response as JSON with these fields:
     "dimensions_referenced": ["DIMENSION1", "DIMENSION2", ...]
 }
 
-Be concise but preserve important details. Focus on what matters for future conversations."""
+Be concise but preserve important details. Focus on what matters for future conversations.
+Return ONLY the JSON object, nothing else."""
 
     def needs_compression(
         self,
@@ -165,8 +169,8 @@ Be concise but preserve important details. Focus on what matters for future conv
                 "sessionId": session_id,
                 "title": compression_result["title"],
                 "summary": compression_result["summary"],
-                "keyInsights": compression_result["key_insights"],
-                "unresolvedTopics": compression_result.get("unresolved_topics", []),
+                "keyInsights": Json(compression_result["key_insights"]),
+                "unresolvedTopics": Json(compression_result.get("unresolved_topics", [])),
                 "emotionalState": compression_result.get("emotional_state"),
                 "sourceMessageIds": [msg.id for msg in messages_to_compress],
                 "compressionModel": self.llm_service.model,
@@ -243,12 +247,22 @@ Be concise but preserve important details. Focus on what matters for future conv
             result = self.llm_service.generate_response(
                 messages=messages,
                 temperature=0.5,  # Lower temperature for consistent summaries
-                max_tokens=1000
+                max_tokens=2000  # Increased from 1000 to avoid truncation
             )
 
             # Parse JSON response
             import json
-            compression_data = json.loads(result["content"])
+            content = result["content"].strip()
+
+            # Try to extract JSON if wrapped in markdown code blocks
+            if content.startswith("```"):
+                # Remove markdown code blocks
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
+
+            compression_data = json.loads(content)
 
             # Add token and cost info
             compression_data["summary_tokens"] = result["usage"]["output_tokens"]
@@ -258,9 +272,12 @@ Be concise but preserve important details. Focus on what matters for future conv
 
         except json.JSONDecodeError as e:
             print(f"❌ Failed to parse compression JSON: {e}")
+            print(f"❌ LLM Response: {result.get('content', 'No content')[:500]}")
             return None
         except Exception as e:
             print(f"❌ Compression generation error: {e}")
+            import traceback
+            print(traceback.format_exc())
             return None
 
     async def get_session_memories(

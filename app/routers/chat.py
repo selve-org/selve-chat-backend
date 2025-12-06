@@ -120,10 +120,13 @@ async def chat_stream(
             except Exception as e:
                 print(f"⚠️ Error saving user message to session: {e}")
 
-        # Container to store accumulated response
+        # Containers to store response and compression state
         class ResponseContainer:
             def __init__(self):
                 self.content = ""
+                self.compression_needed = False
+                self.total_tokens = None
+                self.session_data = None
 
         response_container = ResponseContainer()
 
@@ -141,18 +144,15 @@ async def chat_stream(
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
 
             # Check if compression is needed
-            compression_needed = False
-            total_tokens = None
-            session_data = None
             if request.session_id:
                 try:
-                    compression_needed = await compression_service.should_trigger_compression(request.session_id)
+                    response_container.compression_needed = await compression_service.should_trigger_compression(request.session_id)
                     # Get session to retrieve total tokens and user ID
                     from app.db import db
                     session = await db.chatsession.find_unique(where={"id": request.session_id})
                     if session:
-                        total_tokens = session.totalTokens
-                        session_data = {
+                        response_container.total_tokens = session.totalTokens
+                        response_container.session_data = {
                             "userId": session.userId,
                             "clerkUserId": session.clerkUserId
                         }
@@ -160,7 +160,7 @@ async def chat_stream(
                     print(f"⚠️ Error checking compression: {e}")
 
             # Send completion signal with metadata
-            yield f"data: {json.dumps({'done': True, 'compression_needed': compression_needed, 'total_tokens': total_tokens})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'compression_needed': response_container.compression_needed, 'total_tokens': response_container.total_tokens})}\n\n"
 
         # Background task to save assistant message after stream completes
         async def save_assistant_message():
@@ -177,12 +177,12 @@ async def chat_stream(
         async def trigger_compression_if_needed():
             # Wait for message to be saved first
             await asyncio.sleep(1.0)
-            if compression_needed and request.session_id and session_data:
+            if response_container.compression_needed and request.session_id and response_container.session_data:
                 try:
                     result = await compression_service.compress_conversation(
                         session_id=request.session_id,
-                        user_id=session_data["userId"],
-                        clerk_user_id=session_data["clerkUserId"]
+                        user_id=response_container.session_data["userId"],
+                        clerk_user_id=response_container.session_data["clerkUserId"]
                     )
                     if result.get("compressed"):
                         print(f"✅ Auto-compressed session {request.session_id}: {result['messages_compressed']} messages → {result['tokens_saved']} tokens saved")
@@ -194,7 +194,7 @@ async def chat_stream(
         # Register background tasks
         if request.session_id:
             background_tasks.add_task(save_assistant_message)
-            if compression_needed and session_data:
+            if response_container.compression_needed and response_container.session_data:
                 background_tasks.add_task(trigger_compression_if_needed)
 
         return StreamingResponse(

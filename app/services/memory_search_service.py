@@ -3,6 +3,7 @@ Memory Search Service - Vector search through episodic memories
 Uses Qdrant for semantic similarity matching
 """
 import os
+import hashlib
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from qdrant_client import QdrantClient
@@ -49,6 +50,13 @@ class MemorySearchService:
             print(f"⚠️ Error ensuring collection exists: {e}")
             # Don't set initialized flag so it retries next time
 
+    def _memory_id_to_point_id(self, memory_id: str) -> int:
+        """Convert memory ID (CUID) to integer point ID for Qdrant"""
+        # Use hash to convert string ID to integer
+        # Take first 8 bytes of SHA256 hash and convert to int
+        hash_bytes = hashlib.sha256(memory_id.encode()).digest()[:8]
+        return int.from_bytes(hash_bytes, byteorder='big')
+
     def generate_embedding(self, text: str) -> List[float]:
         """
         Generate embedding for text using OpenAI
@@ -94,9 +102,12 @@ class MemorySearchService:
             # Generate embedding
             embedding_vector = self.generate_embedding(embedding_text)
 
+            # Convert memory ID to integer point ID for Qdrant
+            point_id = self._memory_id_to_point_id(memory_id)
+
             # Store in Qdrant
             point = PointStruct(
-                id=memory_id,
+                id=point_id,
                 vector=embedding_vector,
                 payload={
                     "memory_id": memory_id,
@@ -221,10 +232,13 @@ class MemorySearchService:
             # Ensure Qdrant collection exists
             self._ensure_collection_exists()
 
+            # Convert memory ID to point ID
+            point_id = self._memory_id_to_point_id(memory_id)
+
             # Get the memory's embedding from Qdrant
             memory_point = self.qdrant.retrieve(
                 collection_name=self.collection_name,
-                ids=[memory_id]
+                ids=[point_id]
             )
 
             if not memory_point:
