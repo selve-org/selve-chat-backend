@@ -154,34 +154,45 @@ Set confidence based on pattern strength (0.5-0.7 = emerging, 0.7-0.9 = establis
                 print(f"⚠️ Semantic memory confidence too low: {confidence}")
                 return None
 
-            # Check if semantic memory already exists
+            # Check if semantic memory already exists for this category
             existing = await db.semanticmemory.find_first(
                 where={
                     "userId": user_id,
-                    "isCurrent": True
+                    "category": "aggregate_patterns",
+                    "isActive": True
                 }
             )
 
             if existing:
-                # Mark old memory as not current
+                # Mark old memory as inactive
                 await db.semanticmemory.update(
                     where={"id": existing.id},
-                    data={"isCurrent": False}
+                    data={"isActive": False}
                 )
 
-            # Create new semantic memory
+            # Serialize patterns as JSON content
+            content_data = {
+                "recurring_themes": semantic_data.get("recurring_themes", []),
+                "behavioral_patterns": semantic_data.get("behavioral_patterns", []),
+                "interest_areas": semantic_data.get("interest_areas", []),
+                "communication_style": semantic_data.get("communication_preferences", "conversational"),
+                "growth_areas": semantic_data.get("growth_areas", []),
+                "episodes_analyzed": semantic_data.get("episodes_analyzed", 0)
+            }
+
+            # Create new semantic memory using actual schema fields
+            now = datetime.utcnow()
             semantic_memory = await db.semanticmemory.create(
                 data={
                     "userId": user_id,
-                    "recurringThemes": semantic_data["recurring_themes"],
-                    "behavioralPatterns": semantic_data["behavioral_patterns"],
-                    "interestAreas": semantic_data["interest_areas"],
-                    "communicationStyle": semantic_data.get("communication_preferences", "conversational"),
-                    "growthAreas": semantic_data.get("growth_areas", []),
-                    "confidence": confidence,
-                    "episodesAnalyzed": semantic_data["episodes_analyzed"],
-                    "extractionCost": semantic_data["extraction_cost"],
-                    "isCurrent": True
+                    "category": "aggregate_patterns",
+                    "content": json.dumps(content_data),
+                    "confidence": "CONFIRMED" if confidence >= 0.7 else "OBSERVED" if confidence >= 0.5 else "HYPOTHESIS",
+                    "evidenceCount": semantic_data.get("episodes_analyzed", 1),
+                    "firstObservedAt": now,
+                    "lastObservedAt": now,
+                    "sourceMessageIds": [],
+                    "isActive": True
                 }
             )
 
@@ -209,54 +220,51 @@ Set confidence based on pattern strength (0.5-0.7 = emerging, 0.7-0.9 = establis
         """
         try:
             # Build where clause based on available ID
-            where_clause = {}
+            memory = None
             if user_id:
-                where_clause = {"userId": user_id, "isCurrent": True}
-            elif clerk_user_id:
-                # Query via session relationship
                 memory = await db.semanticmemory.find_first(
                     where={
-                        "isCurrent": True,
-                        "userId": {
-                            "in": await db.chatsession.find_many(
-                                where={"clerkUserId": clerk_user_id},
-                                select={"userId": True}
-                            )
-                        }
+                        "userId": user_id,
+                        "category": "aggregate_patterns",
+                        "isActive": True
                     }
                 )
-
-                if not memory:
+            elif clerk_user_id:
+                # Query via session relationship - first get user IDs from sessions
+                sessions = await db.chatsession.find_many(
+                    where={"clerkUserId": clerk_user_id}
+                )
+                user_ids = [s.userId for s in sessions if s.userId]
+                
+                if not user_ids:
                     return None
-
-                return {
-                    "id": memory.id,
-                    "recurring_themes": memory.recurringThemes,
-                    "behavioral_patterns": memory.behavioralPatterns,
-                    "interest_areas": memory.interestAreas,
-                    "communication_style": memory.communicationStyle,
-                    "growth_areas": memory.growthAreas,
-                    "confidence": memory.confidence,
-                    "episodes_analyzed": memory.episodesAnalyzed,
-                    "created_at": memory.createdAt.isoformat()
-                }
-            else:
-                return None
-
-            memory = await db.semanticmemory.find_first(where=where_clause)
-
+                
+                memory = await db.semanticmemory.find_first(
+                    where={
+                        "userId": {"in": user_ids},
+                        "category": "aggregate_patterns",
+                        "isActive": True
+                    }
+                )
+            
             if not memory:
                 return None
 
+            # Parse content JSON
+            try:
+                content_data = json.loads(memory.content) if memory.content else {}
+            except json.JSONDecodeError:
+                content_data = {}
+
             return {
                 "id": memory.id,
-                "recurring_themes": memory.recurringThemes,
-                "behavioral_patterns": memory.behavioralPatterns,
-                "interest_areas": memory.interestAreas,
-                "communication_style": memory.communicationStyle,
-                "growth_areas": memory.growthAreas,
+                "recurring_themes": content_data.get("recurring_themes", []),
+                "behavioral_patterns": content_data.get("behavioral_patterns", []),
+                "interest_areas": content_data.get("interest_areas", []),
+                "communication_style": content_data.get("communication_style", "conversational"),
+                "growth_areas": content_data.get("growth_areas", []),
                 "confidence": memory.confidence,
-                "episodes_analyzed": memory.episodesAnalyzed,
+                "episodes_analyzed": content_data.get("episodes_analyzed", memory.evidenceCount),
                 "created_at": memory.createdAt.isoformat()
             }
 
