@@ -1,8 +1,13 @@
 """
 User Profile Service - Fetches SELVE personality scores from main app database
 """
+import os
 from typing import Dict, Any, Optional
 from app.db import db
+
+
+DEFAULT_ACTIVE_PLAN = os.getenv("DEFAULT_SUBSCRIPTION_PLAN", "Pro plan")
+DEFAULT_FREE_PLAN = os.getenv("DEFAULT_FREE_PLAN", "Starter plan")
 
 
 class UserProfileService:
@@ -69,6 +74,51 @@ class UserProfileService:
 
         except Exception as e:
             print(f"Error fetching user scores: {str(e)}")
+            return None
+
+    async def get_user_account(self, clerk_user_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch core user account details for UI surfaces (sidebar, header, etc.).
+
+        Args:
+            clerk_user_id: Clerk authentication ID
+
+        Returns:
+            Dict containing user identity and inferred plan info, or None if not found
+        """
+        try:
+            user = await db.user.find_first(where={"clerkId": clerk_user_id})
+
+            if not user:
+                return None
+
+            # Check if the user has a current assessment to infer engagement level
+            latest_result = await db.assessmentresult.find_first(
+                where={
+                    "clerkUserId": clerk_user_id,
+                    "isCurrent": True
+                },
+                order={"createdAt": "desc"}
+            )
+
+            has_assessment = bool(latest_result)
+
+            # We don't yet store billing plans; infer a plan label from engagement
+            subscription_plan = DEFAULT_ACTIVE_PLAN if has_assessment else DEFAULT_FREE_PLAN
+
+            user_name = user.name or (user.email.split("@")[0] if user.email else None)
+
+            return {
+                "user_id": user.id,
+                "clerk_user_id": clerk_user_id,
+                "user_name": user_name,
+                "email": user.email,
+                "has_assessment": has_assessment,
+                "subscription_plan": subscription_plan,
+            }
+
+        except Exception as e:
+            print(f"Error fetching user account: {str(e)}")
             return None
 
     async def get_user_profile(self, clerk_user_id: str) -> Optional[Dict[str, Any]]:

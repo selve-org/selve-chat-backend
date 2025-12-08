@@ -2,7 +2,6 @@
 User API Router - Fetch user profiles and SELVE scores
 """
 from fastapi import APIRouter, HTTPException, status
-from typing import Optional
 from app.services.user_profile_service import UserProfileService
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -41,4 +40,37 @@ async def get_user_scores(clerk_user_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching user scores: {str(e)}"
+        )
+
+
+@router.get("/{clerk_user_id}")
+async def get_user_details(clerk_user_id: str):
+    """
+    Get user account details for UI surfaces
+
+    Args:
+        clerk_user_id: Clerk user ID
+
+    Returns:
+        Basic user info and inferred subscription plan
+    """
+    service = UserProfileService()
+
+    try:
+        user = await service.get_user_account(clerk_user_id)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        return user
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching user details: {str(e)}"
         )
