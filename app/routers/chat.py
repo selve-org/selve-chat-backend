@@ -65,6 +65,7 @@ async def chat(
             clerk_user_id=request.clerk_user_id,
             selve_scores=request.selve_scores,
             assessment_url=request.assessment_url,
+            session_id=request.session_id,
         )
 
         # Save messages to session if session_id provided
@@ -141,7 +142,8 @@ async def chat_stream(
                 clerk_user_id=request.clerk_user_id,
                 selve_scores=request.selve_scores,
                 assessment_url=request.assessment_url,
-                emit_status=True
+                emit_status=True,
+                session_id=request.session_id,
             ):
                 # Check if this is a status event (dict) or text chunk (str)
                 if isinstance(event, dict):

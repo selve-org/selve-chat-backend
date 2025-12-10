@@ -3,6 +3,7 @@ Unified LLM Service - Supports OpenAI and Anthropic
 Environment-based provider switching with tiered model routing
 GPT-5 support with reasoning_effort and text_verbosity parameters
 Retry logic with exponential backoff
+Proper Langfuse v3 tracing with clean inputs/outputs
 """
 import os
 import time
@@ -10,6 +11,7 @@ import asyncio
 from typing import List, Dict, Any, AsyncGenerator, Optional, Callable, TypeVar
 from openai import OpenAI, APIError, RateLimitError, APIConnectionError
 from anthropic import Anthropic, APIError as AnthropicAPIError
+from langfuse import observe, get_client
 
 
 # Type variable for generic retry function
@@ -217,6 +219,13 @@ class LLMService:
             }
         }
 
+    def _extract_user_message(self, messages: List[Dict[str, str]]) -> str:
+        """Extract the last user message for clean Langfuse input display."""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                return msg.get("content", "")
+        return ""
+
     def select_model_for_query(self, query: str, context: Optional[Dict] = None) -> str:
         """
         Select appropriate model based on query complexity.
@@ -258,9 +267,11 @@ class LLMService:
         provider = self._resolve_provider_for_model(model)
 
         if provider == "anthropic":
-            return self._generate_anthropic(messages, temperature, max_tokens, model)
+            result = self._generate_anthropic(messages, temperature, max_tokens, model)
         else:
-            return self._generate_openai(messages, temperature, max_tokens, model)
+            result = self._generate_openai(messages, temperature, max_tokens, model)
+        
+        return result
 
     def _generate_anthropic(self, messages, temperature, max_tokens, model: str = None):
         """Generate response using Anthropic Claude with retry logic"""

@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from contextlib import asynccontextmanager
 from enum import Enum
 
+from langfuse import observe, get_client, propagate_attributes
+
 from .llm_service import LLMService
 from .rag_service import RAGService
 from .user_profile_service import UserProfileService
@@ -569,6 +571,21 @@ class ChatService:
         message = self._validate_message(message)
         conversation_history = self._validate_conversation_history(conversation_history)
         selve_scores = self._validate_selve_scores(selve_scores)
+        
+        # Get Langfuse client for tracing
+        langfuse = get_client()
+
+        # Propagate trace attributes for all nested observations
+        propagate_attributes(
+            user_id=clerk_user_id or "anonymous",
+            session_id=session_id,
+            metadata={
+                "use_rag": str(use_rag),
+                "has_scores": str(bool(selve_scores)),
+                "message_length": str(len(message))
+            },
+            tags=["chat", "selve-chatbot"]
+        )
 
         if not assessment_url:
             assessment_url = self.assessment_url
@@ -610,19 +627,46 @@ class ChatService:
             context_info=context_result.context_info,
         )
         
-        # Generate response with timeout
-        try:
-            llm_response = await asyncio.wait_for(
-                self.llm_service.generate_response(
-                    messages=messages,
-                    temperature=0.7,
-                    max_tokens=500
-                ),
-                timeout=LLM_TIMEOUT_SECONDS
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"LLM response generation timed out after {LLM_TIMEOUT_SECONDS}s")
-            raise
+        # Use context manager for proper Langfuse generation tracing
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="chat-response",
+            model=self.llm_service.model,
+            input=message,  # Clean string input - just the user message
+        ) as generation:
+            try:
+                # Generate response with timeout
+                llm_response = await asyncio.wait_for(
+                    self.llm_service.generate_response_async(
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=500
+                    ),
+                    timeout=LLM_TIMEOUT_SECONDS
+                )
+                
+                # Update generation with clean output and usage
+                generation.update(
+                    output=llm_response["content"],  # Clean string output
+                    usage_details={
+                        "input": llm_response["usage"].get("input_tokens", 0),
+                        "output": llm_response["usage"].get("output_tokens", 0),
+                    },
+                    model=llm_response["model"],
+                    metadata={
+                        "provider": llm_response["provider"],
+                        "cost": llm_response["cost"],
+                        "context_used": context_result.context_info is not None,
+                    }
+                )
+                
+            except asyncio.TimeoutError:
+                logger.error(f"LLM response generation timed out after {LLM_TIMEOUT_SECONDS}s")
+                generation.update(
+                    level="ERROR",
+                    status_message=f"Timeout after {LLM_TIMEOUT_SECONDS}s"
+                )
+                raise
         
         # Check if compression needed
         compression_needed = False
@@ -674,7 +718,8 @@ class ChatService:
         clerk_user_id: Optional[str] = None,
         selve_scores: Optional[Dict[str, float]] = None,
         assessment_url: Optional[str] = None,
-        emit_status: bool = True
+        emit_status: bool = True,
+        session_id: Optional[str] = None,
     ) -> AsyncGenerator[Union[str, Dict[str, Any]], None]:
         """
         Generate a streaming chat response with optional RAG context and status events.
@@ -689,6 +734,7 @@ class ChatService:
             selve_scores: User's SELVE personality scores
             assessment_url: URL for users to take the assessment when scores are missing
             emit_status: Whether to emit status events for thinking UI
+            session_id: Session ID for tracing
             
         Yields:
             Either text chunks (str) or status event dicts
@@ -701,6 +747,7 @@ class ChatService:
             message = self._validate_message(message)
             conversation_history = self._validate_conversation_history(conversation_history)
             selve_scores = self._validate_selve_scores(selve_scores)
+            
             if not assessment_url:
                 assessment_url = self.assessment_url
 
@@ -727,66 +774,110 @@ class ChatService:
         
         sources_used: List[Dict[str, str]] = []
         
-        try:
-            # Phase 1: Retrieve Context
-            if emit_status and use_rag:
-                yield StatusEvent.retrieving_context().to_dict()
-            
-            # Phase 2: Personalization
-            if emit_status:
-                yield StatusEvent.personalizing().to_dict()
-            
-            # Build all context (parallel fetching)
-            context_result = await self.context_service.build_context(
-                message=message,
-                clerk_user_id=clerk_user_id,
-                selve_scores=selve_scores,
-                use_rag=use_rag,
-                assessment_url=assessment_url,
-            )
-            
-            sources_used = context_result.sources_used
-            
-            # Phase 3: Generation
-            if emit_status:
-                yield StatusEvent.generating(model=self.llm_service.model).to_dict()
-            
-            # Build messages
-            messages = self.context_service.build_messages(
-                message=message,
-                system_content=context_result.system_content,
-                conversation_history=conversation_history,
-                context_info=context_result.context_info,
-            )
-            
-            # Stream response
-            async for chunk in self.llm_service.generate_response_stream(
-                messages=messages,
-                temperature=0.7,
-                max_tokens=500
-            ):
-                # Check for shutdown
-                if self._shutdown_event.is_set():
-                    logger.info("Shutdown requested, stopping stream")
-                    break
-                yield chunk
-            
-            # Phase 4: Citation
-            if emit_status and sources_used:
-                yield StatusEvent.citing_sources(sources=sources_used).to_dict()
-            
-            # Complete
-            if emit_status:
-                yield StatusEvent.complete(sources=sources_used).to_dict()
+        # Get Langfuse client and propagate attributes
+        langfuse = get_client()
+        
+        propagate_attributes(
+            user_id=clerk_user_id or "anonymous",
+            session_id=session_id,
+            metadata={
+                "use_rag": str(use_rag),
+                "has_scores": str(bool(selve_scores)),
+                "streaming": "true",
+                "message_length": str(len(message))
+            },
+            tags=["chat", "streaming", "selve-chatbot"]
+        )
+        
+        # Use context manager for the entire streaming operation
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="chat-response-stream",
+            model=self.llm_service.model,
+            input=message,  # Clean string input - just the user message
+        ) as generation:
+            try:
+                # Phase 1: Retrieve Context
+                if emit_status and use_rag:
+                    yield StatusEvent.retrieving_context().to_dict()
                 
-        except asyncio.CancelledError:
-            logger.info("Stream generation was cancelled")
-            if emit_status:
-                yield StatusEvent.error("Request was cancelled").to_dict()
-            raise
-            
-        except Exception as e:
-            logger.error(f"Error during stream generation: {e}", exc_info=True)
-            if emit_status:
-                yield StatusEvent.error("An error occurred while generating the response").to_dict()
-            raise
+                # Phase 2: Personalization
+                if emit_status:
+                    yield StatusEvent.personalizing().to_dict()
+                
+                # Build all context (parallel fetching)
+                context_result = await self.context_service.build_context(
+                    message=message,
+                    clerk_user_id=clerk_user_id,
+                    selve_scores=selve_scores,
+                    use_rag=use_rag,
+                    assessment_url=assessment_url,
+                )
+                
+                sources_used = context_result.sources_used
+                
+                # Phase 3: Generation
+                if emit_status:
+                    yield StatusEvent.generating(model=self.llm_service.model).to_dict()
+                
+                # Build messages
+                messages = self.context_service.build_messages(
+                    message=message,
+                    system_content=context_result.system_content,
+                    conversation_history=conversation_history,
+                    context_info=context_result.context_info,
+                )
+                
+                # Stream response and collect for Langfuse
+                full_response_chunks = []
+                async for chunk in self.llm_service.generate_response_stream(
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=500
+                ):
+                    # Check for shutdown
+                    if self._shutdown_event.is_set():
+                        logger.info("Shutdown requested, stopping stream")
+                        break
+                    if isinstance(chunk, str):
+                        full_response_chunks.append(chunk)
+                    yield chunk
+                
+                # Update generation with collected output
+                full_response = "".join(full_response_chunks)
+                generation.update(
+                    output=full_response,  # Clean string output
+                    metadata={
+                        "provider": self.llm_service.provider,
+                        "sources_count": len(sources_used),
+                        "context_used": context_result.context_info is not None,
+                    }
+                )
+                
+                # Phase 4: Citation
+                if emit_status and sources_used:
+                    yield StatusEvent.citing_sources(sources=sources_used).to_dict()
+                
+                # Complete
+                if emit_status:
+                    yield StatusEvent.complete(sources=sources_used).to_dict()
+                    
+            except asyncio.CancelledError:
+                logger.info("Stream generation was cancelled")
+                generation.update(
+                    level="WARNING",
+                    status_message="Request was cancelled"
+                )
+                if emit_status:
+                    yield StatusEvent.error("Request was cancelled").to_dict()
+                raise
+                
+            except Exception as e:
+                logger.error(f"Error during stream generation: {e}", exc_info=True)
+                generation.update(
+                    level="ERROR",
+                    status_message=str(e)
+                )
+                if emit_status:
+                    yield StatusEvent.error("An error occurred while generating the response").to_dict()
+                raise
