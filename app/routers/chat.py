@@ -62,7 +62,9 @@ async def chat(
             message=request.message,
             conversation_history=conversation_history,
             use_rag=request.use_rag,
-            clerk_user_id=request.clerk_user_id
+            clerk_user_id=request.clerk_user_id,
+            selve_scores=request.selve_scores,
+            assessment_url=request.assessment_url,
         )
 
         # Save messages to session if session_id provided
@@ -138,6 +140,7 @@ async def chat_stream(
                 use_rag=request.use_rag,
                 clerk_user_id=request.clerk_user_id,
                 selve_scores=request.selve_scores,
+                assessment_url=request.assessment_url,
                 emit_status=True
             ):
                 # Check if this is a status event (dict) or text chunk (str)

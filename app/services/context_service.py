@@ -31,11 +31,13 @@ class ContextService:
         compression_service: CompressionService,
         semantic_memory_service: SemanticMemoryService,
         system_prompt: str,
+        assessment_url: str,
     ) -> None:
         self.rag_service = rag_service
         self.compression_service = compression_service
         self.semantic_memory_service = semantic_memory_service
         self.system_prompt = system_prompt
+        self.assessment_url = assessment_url.rstrip("/")
 
     async def _fetch_rag_context(self, message: str, top_k: int = 3) -> Optional[Dict[str, Any]]:
         try:
@@ -83,6 +85,7 @@ class ContextService:
         clerk_user_id: Optional[str],
         selve_scores: Optional[Dict[str, float]],
         use_rag: bool,
+        assessment_url: Optional[str] = None,
     ) -> ContextResult:
         tasks: Dict[str, asyncio.Task] = {}
 
@@ -132,6 +135,14 @@ class ContextService:
             ]
 
         system_content = self.system_prompt
+        assessment_link = assessment_url or self.assessment_url
+        if not selve_scores and assessment_link:
+            system_content = (
+                f"{system_content}\n\nASSESSMENT CTA:\n"
+                "- When you do not have the user's SELVE scores, invite them to take their assessment.\n"
+                f"- Include a short call-to-action with this link: [Take the SELVE assessment]({assessment_link})\n"
+                "- Keep it to one concise line before continuing with help."
+            )
         if user_context:
             system_content = f"{system_content}\n\n{user_context}"
         if semantic_context:

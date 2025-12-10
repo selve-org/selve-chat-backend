@@ -8,6 +8,15 @@ from app.db import db
 
 DEFAULT_ACTIVE_PLAN = os.getenv("DEFAULT_SUBSCRIPTION_PLAN", "Pro plan")
 DEFAULT_FREE_PLAN = os.getenv("DEFAULT_FREE_PLAN", "Starter plan")
+ASSESSMENT_URL = (
+    os.getenv("ASSESSMENT_URL")
+    or os.getenv("APP_URL")
+    or os.getenv("NEXT_PUBLIC_APP_URL")
+    or os.getenv("MAIN_APP_URL")
+    or os.getenv("MAIN_APP_URL_PROD")
+    or os.getenv("MAIN_APP_URL_DEV")
+    or "http://localhost:3000"
+)
 
 
 class UserProfileService:
@@ -206,10 +215,19 @@ class UserProfileService:
         """
         if not profile or not profile.get("has_assessment"):
             user_name = profile.get("user_name", "there") if profile else "there"
-            return f"""USER CONTEXT:
+            assessment_base = ASSESSMENT_URL.rstrip("/")
+            assessment_link = (
+                assessment_base
+                if assessment_base.lower().endswith("/assessment")
+                else f"{assessment_base}/assessment"
+            )
+
+            return (
+                """USER CONTEXT:
 User {user_name} has not completed their SELVE personality assessment yet.
 When relevant, encourage them to take the assessment to get personalized insights.
-Assessment available at: selve.me/assessment"""
+Assessment available at: {assessment_link}"""
+            ).format(user_name=user_name, assessment_link=assessment_link)
 
         # Build personalized context
         user_name = profile.get("user_name", "this user")

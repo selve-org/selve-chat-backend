@@ -34,6 +34,10 @@ class ChatRequest(BaseModel):
         default=None,
         description="User's SELVE personality scores for personalization"
     )
+    assessment_url: Optional[str] = Field(
+        default=None,
+        description="URL for the SELVE assessment (used when scores are missing)"
+    )
 
     class Config:
         json_schema_extra = {

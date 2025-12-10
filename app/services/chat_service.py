@@ -6,6 +6,7 @@ Includes personality-focused guardrails and off-topic detection
 
 import asyncio
 import logging
+import os
 from typing import List, Dict, Any, Optional, AsyncGenerator, Union, Set
 from dataclasses import dataclass, field
 from contextlib import asynccontextmanager
@@ -149,6 +150,7 @@ class ChatService:
         self.compression_service = CompressionService()
         self.conversation_state_service = ConversationStateService()
         self.semantic_memory_service = SemanticMemoryService()
+        self.assessment_url = self._resolve_assessment_url()
         self.system_prompt = self._load_system_prompt()
 
         self.title_service = TitleService(self.llm_service)
@@ -157,6 +159,7 @@ class ChatService:
             compression_service=self.compression_service,
             semantic_memory_service=self.semantic_memory_service,
             system_prompt=self.system_prompt,
+            assessment_url=self.assessment_url,
         )
         
         # Background task management
@@ -166,6 +169,26 @@ class ChatService:
     def _load_system_prompt(self) -> str:
         """Load the SELVE chatbot system prompt from prompts module"""
         return SYSTEM_PROMPT
+
+    def _resolve_assessment_url(self) -> str:
+        """Resolve assessment URL from environment with sensible defaults."""
+        # Priority: explicit assessment URL
+        env_url = os.getenv("ASSESSMENT_URL")
+        if env_url:
+            return env_url.rstrip("/") + "/assessment"
+
+        # Fallbacks from app URLs (frontend/backends share envs)
+        app_url = (
+            os.getenv("APP_URL")
+            or os.getenv("NEXT_PUBLIC_APP_URL")
+            or os.getenv("MAIN_APP_URL")
+            or os.getenv("MAIN_APP_URL_PROD")
+            or os.getenv("MAIN_APP_URL_DEV")
+        )
+        if app_url:
+            return f"{app_url.rstrip('/')}/assessment"
+
+        return "http://localhost:3000/assessment"
 
     # =========================================================================
     # Background Task Management
@@ -422,6 +445,27 @@ class ChatService:
         
         return validated_scores if validated_scores else None
 
+    async def _get_scores_from_profile(self, clerk_user_id: str) -> Optional[Dict[str, float]]:
+        """Fetch SELVE scores from the user profile service when not provided."""
+        try:
+            profile = await self.user_profile_service.get_user_scores(clerk_user_id)
+            if not profile:
+                return None
+
+            profile_scores = profile.get("scores")
+            if not profile_scores:
+                return None
+
+            return self._validate_selve_scores(profile_scores)
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch SELVE scores for user %s: %s",
+                clerk_user_id,
+                exc,
+                exc_info=True,
+            )
+            return None
+
     # =========================================================================
     # Conversation State Management
     # =========================================================================
@@ -500,7 +544,8 @@ class ChatService:
         use_rag: bool = True,
         clerk_user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        selve_scores: Optional[Dict[str, float]] = None
+        selve_scores: Optional[Dict[str, float]] = None,
+        assessment_url: Optional[str] = None,
     ) -> ChatResponse:
         """
         Generate a chat response with optional RAG context.
@@ -512,6 +557,7 @@ class ChatService:
             clerk_user_id: User ID for personalization
             session_id: Session ID for state tracking
             selve_scores: SELVE personality scores
+            assessment_url: URL for users to take the assessment when scores are missing
             
         Returns:
             ChatResponse with response and metadata
@@ -523,6 +569,12 @@ class ChatService:
         message = self._validate_message(message)
         conversation_history = self._validate_conversation_history(conversation_history)
         selve_scores = self._validate_selve_scores(selve_scores)
+
+        if not assessment_url:
+            assessment_url = self.assessment_url
+
+        if not selve_scores and clerk_user_id:
+            selve_scores = await self._get_scores_from_profile(clerk_user_id)
         
         # Check guardrails first
         canned_response = get_canned_response(message)
@@ -547,6 +599,7 @@ class ChatService:
             clerk_user_id=clerk_user_id,
             selve_scores=selve_scores,
             use_rag=use_rag,
+            assessment_url=assessment_url,
         )
 
         # Build messages for LLM
@@ -620,6 +673,7 @@ class ChatService:
         use_rag: bool = True,
         clerk_user_id: Optional[str] = None,
         selve_scores: Optional[Dict[str, float]] = None,
+        assessment_url: Optional[str] = None,
         emit_status: bool = True
     ) -> AsyncGenerator[Union[str, Dict[str, Any]], None]:
         """
@@ -633,6 +687,7 @@ class ChatService:
             use_rag: Whether to retrieve context from RAG
             clerk_user_id: Clerk user ID for profile personalization
             selve_scores: User's SELVE personality scores
+            assessment_url: URL for users to take the assessment when scores are missing
             emit_status: Whether to emit status events for thinking UI
             
         Yields:
@@ -646,6 +701,11 @@ class ChatService:
             message = self._validate_message(message)
             conversation_history = self._validate_conversation_history(conversation_history)
             selve_scores = self._validate_selve_scores(selve_scores)
+            if not assessment_url:
+                assessment_url = self.assessment_url
+
+            if not selve_scores and clerk_user_id:
+                selve_scores = await self._get_scores_from_profile(clerk_user_id)
         except InputValidationError as e:
             if emit_status:
                 yield StatusEvent.error(str(e)).to_dict()
@@ -682,6 +742,7 @@ class ChatService:
                 clerk_user_id=clerk_user_id,
                 selve_scores=selve_scores,
                 use_rag=use_rag,
+                assessment_url=assessment_url,
             )
             
             sources_used = context_result.sources_used
