@@ -2,6 +2,7 @@
 Sessions API Router
 Manages chat sessions - create, retrieve, list, update
 """
+import logging
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from typing import List, Optional
@@ -9,6 +10,7 @@ from app.services.session_service import SessionService
 from app.services.chat_service import ChatService
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+logger = logging.getLogger(__name__)
 
 
 # Pydantic models
@@ -20,6 +22,7 @@ class CreateSessionRequest(BaseModel):
 
 class GenerateTitleRequest(BaseModel):
     message: str
+    assistant_response: Optional[str] = None
 
 
 class SessionSummaryResponse(BaseModel):
@@ -248,24 +251,43 @@ async def generate_and_update_title(
         request: Contains the first user message
 
     Returns:
-        Updated session with new title
+        Session details (title update runs in background)
     """
     try:
-        # Generate title using LLM
-        title = await chat_service.generate_conversation_title(request.message)
-
-        # Update session with generated title
-        session = await session_service.update_session_title(
-            session_id=session_id,
-            title=title
-        )
-
+        # Ensure the session exists before starting background work
+        session = await session_service.get_session(session_id)
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Session not found: {session_id}"
             )
 
+        # Set a lightweight placeholder so the UI can show a loading state (similar to Google's blinking stub)
+        if session.get("title") in (None, "", "New Conversation"):
+            placeholder_title = "Generating title..."
+            await session_service.update_session_title(session_id=session_id, title=placeholder_title)
+            session["title"] = placeholder_title
+
+        async def _generate_and_save_title():
+            try:
+                title = await chat_service.generate_conversation_title(
+                    request.message,
+                    request.assistant_response,
+                )
+                await session_service.update_session_title(
+                    session_id=session_id,
+                    title=title
+                )
+            except Exception as e:
+                logger.warning(f"Background title generation failed for {session_id}: {e}")
+
+        # Fire and forget using chat_service background task tracking so the user can keep chatting
+        chat_service._schedule_background_task(
+            _generate_and_save_title(),
+            name=f"generate_title_{session_id}"
+        )
+
+        # Return current session state immediately (with placeholder if applied)
         return SessionDetailResponse(**session)
 
     except HTTPException:

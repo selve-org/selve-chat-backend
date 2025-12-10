@@ -59,6 +59,9 @@ class LLMService:
         "gpt-5.1": (2.50, 10.00),
     }
 
+    OPENAI_PREFIXES = ("gpt-4", "gpt-5")
+    ANTHROPIC_PREFIXES = ("claude",)
+
     # GPT-5 models that support reasoning_effort parameter
     GPT5_REASONING_MODELS = {
         "gpt-5-nano", "gpt-5-mini", "gpt-5", "gpt-5.1-nano", "gpt-5.1"
@@ -82,21 +85,18 @@ class LLMService:
             3: os.getenv("TIER_3_MODEL", "gpt-5.1"),        # Complex queries
         }
         
-        # Initialize clients based on provider
+        # Initialize clients for both providers when keys exist so we can swap by model automatically
+        openai_key = os.getenv("OPENAI_API_KEY")
+        self.openai = OpenAI(api_key=openai_key) if openai_key else None
+
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        self.anthropic = Anthropic(api_key=anthropic_key) if anthropic_key else None
+
+        # Default model comes from provider-specific env, but provider can be overridden per-call by model detection
         if self.provider == "anthropic":
-            self.anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
             self.model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
-            self.openai = None
         else:
-            # Default to OpenAI with GPT-5-mini
-            self.openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             self.model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
-            # Also init Anthropic as fallback
-            anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-            if anthropic_key:
-                self.anthropic = Anthropic(api_key=anthropic_key)
-            else:
-                self.anthropic = None
 
     def _with_retry(self, func: Callable[[], T], operation: str = "LLM call") -> T:
         """
@@ -198,6 +198,15 @@ class LLMService:
     def _is_gpt5_model(self, model: str) -> bool:
         """Check if model supports GPT-5 reasoning parameters"""
         return model in self.GPT5_REASONING_MODELS
+
+    def _resolve_provider_for_model(self, model: str) -> str:
+        """Infer provider from model name; fallback to configured provider."""
+        model_lower = (model or "").lower()
+        if model_lower.startswith(self.OPENAI_PREFIXES):
+            return "openai"
+        if model_lower.startswith(self.ANTHROPIC_PREFIXES):
+            return "anthropic"
+        return self.provider
     
     def _get_gpt5_extra_body(self) -> Dict[str, Any]:
         """Build extra_body params for GPT-5 models"""
@@ -246,8 +255,9 @@ class LLMService:
     ) -> Dict[str, Any]:
         """Generate a response using the configured LLM provider"""
         model = model or self.model
-        
-        if self.provider == "anthropic":
+        provider = self._resolve_provider_for_model(model)
+
+        if provider == "anthropic":
             return self._generate_anthropic(messages, temperature, max_tokens, model)
         else:
             return self._generate_openai(messages, temperature, max_tokens, model)
@@ -255,6 +265,8 @@ class LLMService:
     def _generate_anthropic(self, messages, temperature, max_tokens, model: str = None):
         """Generate response using Anthropic Claude with retry logic"""
         model = model or self.model
+        if not self.anthropic:
+            raise ValueError("Anthropic client not configured; set ANTHROPIC_API_KEY or use an OpenAI model")
         system_msg = None
         conv = []
         
@@ -295,6 +307,8 @@ class LLMService:
     def _generate_openai(self, messages, temperature, max_tokens, model: str = None):
         """Generate response using OpenAI - supports GPT-5 reasoning parameters with retry logic"""
         model = model or self.model
+        if not self.openai:
+            raise ValueError("OpenAI client not configured; set OPENAI_API_KEY or use an Anthropic model")
         
         # Build request params
         request_params = {
@@ -332,6 +346,25 @@ class LLMService:
             "cost": cost
         }
 
+    async def generate_response_async(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        model: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Async wrapper around generate_response for convenience."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.generate_response(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                model=model,
+            ),
+        )
+
     async def generate_response_stream(
         self,
         messages: List[Dict[str, str]],
@@ -345,8 +378,9 @@ class LLMService:
         Yields individual text chunks as they arrive
         """
         model = model or self.model
-        
-        if self.provider == "anthropic":
+        provider = self._resolve_provider_for_model(model)
+
+        if provider == "anthropic":
             async for chunk in self._generate_anthropic_stream(messages, temperature, max_tokens, model):
                 yield chunk
         else:
