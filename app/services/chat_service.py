@@ -906,14 +906,19 @@ class ChatService:
                 if stream_metadata:
                     logger.info(f"✅ Stream metadata captured: {stream_metadata}")
                     update_params["model"] = stream_metadata.get("model")
-                    update_params["usage"] = {
-                        "input": stream_metadata["usage"].get("input_tokens", 0),
-                        "output": stream_metadata["usage"].get("output_tokens", 0),
-                        "total": stream_metadata["usage"].get("total_tokens", 0),
+                    # Use correct Langfuse Python SDK parameter names
+                    update_params["usage_details"] = {
+                        "input_tokens": stream_metadata["usage"].get("input_tokens", 0),
+                        "output_tokens": stream_metadata["usage"].get("output_tokens", 0),
+                        "total_tokens": stream_metadata["usage"].get("total_tokens", 0),
                     }
                     update_params["metadata"]["provider"] = stream_metadata.get("provider")
-                    # Cost as top-level parameter for Total Cost column
-                    update_params["cost"] = stream_metadata.get("cost")
+                    # Use correct Langfuse SDK format: cost_details with "total" key
+                    if stream_metadata.get("cost") is not None:
+                        cost_value = stream_metadata.get("cost")
+                        update_params["cost_details"] = {
+                            "total": cost_value  # SDK expects "total" key, not "total_cost"
+                        }
 
                     # Add GPT-5 specific metadata if present
                     if stream_metadata.get("reasoning_effort"):
@@ -923,7 +928,7 @@ class ChatService:
                 else:
                     logger.warning("⚠️ No stream metadata captured - cost and usage will be missing")
 
-                logger.info(f"📤 Sending to Langfuse - update_params keys: {update_params.keys()}, cost: {update_params.get('cost')}, usage: {update_params.get('usage')}")
+                logger.info(f"📤 Sending to Langfuse - cost_details: {update_params.get('cost_details')}, usage_details: {update_params.get('usage_details')}")
                 generation.update(**update_params)
                 
                 # Phase 4: Citation
