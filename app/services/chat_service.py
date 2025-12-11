@@ -668,14 +668,15 @@ class ChatService:
                 # Update generation with clean output and usage
                 generation.update(
                     output=llm_response["content"],  # Clean string output
-                    usage_details={
+                    usage={
                         "input": llm_response["usage"].get("input_tokens", 0),
                         "output": llm_response["usage"].get("output_tokens", 0),
+                        "total": llm_response["usage"].get("total_tokens", 0),
                     },
                     model=llm_response["model"],
+                    cost=llm_response["cost"],  # Top-level for Total Cost column
                     metadata={
                         "provider": llm_response["provider"],
-                        "cost": llm_response["cost"],
                         "context_used": context_result.context_info is not None,
                         **geo_metadata,  # Include geographic metadata in generation
                     }
@@ -903,21 +904,26 @@ class ChatService:
                 
                 # Add usage and cost if metadata was captured
                 if stream_metadata:
-                    logger.info(f"✅ Updating Langfuse with metadata: cost={stream_metadata.get('cost')}, usage={stream_metadata.get('usage')}")
+                    logger.info(f"✅ Stream metadata captured: {stream_metadata}")
                     update_params["model"] = stream_metadata.get("model")
-                    update_params["usage_details"] = {
+                    update_params["usage"] = {
                         "input": stream_metadata["usage"].get("input_tokens", 0),
                         "output": stream_metadata["usage"].get("output_tokens", 0),
+                        "total": stream_metadata["usage"].get("total_tokens", 0),
                     }
                     update_params["metadata"]["provider"] = stream_metadata.get("provider")
-                    update_params["metadata"]["cost"] = stream_metadata.get("cost")
-                    
+                    # Cost as top-level parameter for Total Cost column
+                    update_params["cost"] = stream_metadata.get("cost")
+
                     # Add GPT-5 specific metadata if present
                     if stream_metadata.get("reasoning_effort"):
                         update_params["metadata"]["reasoning_effort"] = stream_metadata["reasoning_effort"]
                     if stream_metadata.get("text_verbosity"):
                         update_params["metadata"]["text_verbosity"] = stream_metadata["text_verbosity"]
-                
+                else:
+                    logger.warning("⚠️ No stream metadata captured - cost and usage will be missing")
+
+                logger.info(f"📤 Sending to Langfuse - update_params keys: {update_params.keys()}, cost: {update_params.get('cost')}, usage: {update_params.get('usage')}")
                 generation.update(**update_params)
                 
                 # Phase 4: Citation
