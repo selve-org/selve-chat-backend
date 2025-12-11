@@ -8,10 +8,13 @@ Proper Langfuse v3 tracing with clean inputs/outputs
 import os
 import time
 import asyncio
-from typing import List, Dict, Any, AsyncGenerator, Optional, Callable, TypeVar
+import logging
+from typing import List, Dict, Any, AsyncGenerator, Optional, Callable, TypeVar, Union
 from openai import OpenAI, APIError, RateLimitError, APIConnectionError
 from anthropic import Anthropic, APIError as AnthropicAPIError
 from langfuse import observe, get_client
+
+logger = logging.getLogger(__name__)
 
 
 # Type variable for generic retry function
@@ -47,10 +50,14 @@ class LLMService:
     """
 
     MODEL_PRICING = {
-        # Anthropic models
+        # Anthropic models (full API names)
         "claude-3-5-haiku-20241022": (0.80, 4.00),
         "claude-3-5-sonnet-20241022": (3.00, 15.00),
         "claude-opus-4-20250514": (15.00, 75.00),
+        # Anthropic models (simplified aliases)
+        "claude-haiku-4-5": (0.80, 4.00),
+        "claude-sonnet-4-5": (3.00, 15.00),
+        "claude-opus-4-5": (15.00, 75.00),
         # OpenAI GPT-4 models
         "gpt-4o-mini": (0.150, 0.600),
         # OpenAI GPT-5 models
@@ -382,11 +389,11 @@ class LLMService:
         temperature: float = 0.7,
         max_tokens: int = 500,
         model: Optional[str] = None
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Union[str, Dict], None]:
         """
         Generate streaming response from LLM
 
-        Yields individual text chunks as they arrive
+        Yields individual text chunks as they arrive, followed by metadata dict
         """
         model = model or self.model
         provider = self._resolve_provider_for_model(model)
@@ -404,8 +411,11 @@ class LLMService:
         temperature: float,
         max_tokens: int,
         model: Optional[str] = None
-    ) -> AsyncGenerator[str, None]:
-        """Stream responses from Anthropic"""
+    ) -> AsyncGenerator[Union[str, Dict], None]:
+        """
+        Stream responses from Anthropic.
+        Yields text chunks, then a final dict with usage metadata.
+        """
         model = model or self.model
         system_msg = None
         conv = []
@@ -426,6 +436,29 @@ class LLMService:
         ) as stream:
             for text in stream.text_stream:
                 yield text
+            
+            # After stream completes, yield usage metadata as a dict
+            final_message = stream.get_final_message()
+            input_tokens = final_message.usage.input_tokens
+            output_tokens = final_message.usage.output_tokens
+            input_price, output_price = self.MODEL_PRICING.get(model, (0, 0))
+            cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
+            
+            metadata = {
+                "__metadata__": True,
+                "model": model,
+                "provider": "anthropic",
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens
+                },
+                "cost": cost
+            }
+            
+            logger.info(f"🔍 Anthropic stream metadata: {metadata}")
+            # Yield metadata marker at the end
+            yield metadata
 
     async def _generate_openai_stream(
         self,
@@ -433,8 +466,11 @@ class LLMService:
         temperature: float,
         max_tokens: int,
         model: Optional[str] = None
-    ) -> AsyncGenerator[str, None]:
-        """Stream responses from OpenAI - supports GPT-5 reasoning parameters"""
+    ) -> AsyncGenerator[Union[str, Dict], None]:
+        """
+        Stream responses from OpenAI - supports GPT-5 reasoning parameters.
+        Yields text chunks, then a final dict with usage metadata.
+        """
         model = model or self.model
         
         # Build request params
@@ -443,7 +479,8 @@ class LLMService:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "stream": True
+            "stream": True,
+            "stream_options": {"include_usage": True}  # Request usage data in stream
         }
         
         # Add GPT-5 specific parameters if applicable
@@ -451,7 +488,36 @@ class LLMService:
             request_params["extra_body"] = self._get_gpt5_extra_body()
         
         stream = self.openai.chat.completions.create(**request_params)
+        
+        # Track usage from stream
+        usage_data = None
 
         for chunk in stream:
-            if chunk.choices[0].delta.content:
+            # Check for content
+            if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
+            
+            # Capture usage data (comes in final chunk when include_usage=True)
+            if hasattr(chunk, 'usage') and chunk.usage is not None:
+                usage_data = chunk.usage
+        
+        # After stream completes, yield usage metadata
+        if usage_data:
+            input_tokens = usage_data.prompt_tokens
+            output_tokens = usage_data.completion_tokens
+            input_price, output_price = self.MODEL_PRICING.get(model, (0, 0))
+            cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
+            
+            yield {
+                "__metadata__": True,
+                "model": model,
+                "provider": "openai",
+                "reasoning_effort": self.reasoning_effort if self._is_gpt5_model(model) else None,
+                "text_verbosity": self.text_verbosity if self._is_gpt5_model(model) else None,
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": usage_data.total_tokens
+                },
+                "cost": cost
+            }

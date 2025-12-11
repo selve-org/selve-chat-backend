@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from enum import Enum
 
 from langfuse import observe, get_client, propagate_attributes
+from app.services.base import ResultStatus
 
 from .llm_service import LLMService
 from .rag_service import RAGService
@@ -22,6 +23,7 @@ from .conversation_state_service import ConversationStateService
 from .semantic_memory_service import SemanticMemoryService
 from .title_service import TitleService
 from .context_service import ContextService
+from .geoip_service import GeoIPService
 from ..prompts import SYSTEM_PROMPT, get_canned_response, classify_message
 
 
@@ -152,6 +154,7 @@ class ChatService:
         self.compression_service = CompressionService()
         self.conversation_state_service = ConversationStateService()
         self.semantic_memory_service = SemanticMemoryService()
+        self.geoip_service = GeoIPService()
         self.assessment_url = self._resolve_assessment_url()
         self.system_prompt = self._load_system_prompt()
 
@@ -548,6 +551,7 @@ class ChatService:
         session_id: Optional[str] = None,
         selve_scores: Optional[Dict[str, float]] = None,
         assessment_url: Optional[str] = None,
+        client_ip: Optional[str] = None,
     ) -> ChatResponse:
         """
         Generate a chat response with optional RAG context.
@@ -560,6 +564,7 @@ class ChatService:
             session_id: Session ID for state tracking
             selve_scores: SELVE personality scores
             assessment_url: URL for users to take the assessment when scores are missing
+            client_ip: Client IP address for geolocation enrichment
             
         Returns:
             ChatResponse with response and metadata
@@ -574,6 +579,20 @@ class ChatService:
         
         # Get Langfuse client for tracing
         langfuse = get_client()
+        
+        # Fetch geolocation if IP provided
+        geo_metadata = {}
+        if client_ip:
+            logger.info(f"🌍 [Non-streaming] Fetching geolocation for IP: {client_ip}")
+            geo_result = await self.geoip_service.get_geolocation(client_ip)
+            logger.info(f"🌍 [Non-streaming] GeoIP result: status={geo_result.status}, has_data={geo_result.data is not None}")
+            if geo_result.status == ResultStatus.SUCCESS and geo_result.data:
+                geo_metadata = geo_result.data.to_dict()
+                logger.info(f"🌍 [Non-streaming] Geo metadata: {geo_metadata}")
+            else:
+                logger.warning(f"🌍 [Non-streaming] GeoIP failed: {geo_result.status}")
+        else:
+            logger.warning("🌍 [Non-streaming] No client_ip provided")
 
         # Propagate trace attributes for all nested observations
         propagate_attributes(
@@ -582,7 +601,8 @@ class ChatService:
             metadata={
                 "use_rag": str(use_rag),
                 "has_scores": str(bool(selve_scores)),
-                "message_length": str(len(message))
+                "message_length": str(len(message)),
+                **geo_metadata,  # Include geo data: ip, city, state, country, etc.
             },
             tags=["chat", "selve-chatbot"]
         )
@@ -657,6 +677,7 @@ class ChatService:
                         "provider": llm_response["provider"],
                         "cost": llm_response["cost"],
                         "context_used": context_result.context_info is not None,
+                        **geo_metadata,  # Include geographic metadata in generation
                     }
                 )
                 
@@ -720,6 +741,7 @@ class ChatService:
         assessment_url: Optional[str] = None,
         emit_status: bool = True,
         session_id: Optional[str] = None,
+        client_ip: Optional[str] = None,
     ) -> AsyncGenerator[Union[str, Dict[str, Any]], None]:
         """
         Generate a streaming chat response with optional RAG context and status events.
@@ -735,6 +757,7 @@ class ChatService:
             assessment_url: URL for users to take the assessment when scores are missing
             emit_status: Whether to emit status events for thinking UI
             session_id: Session ID for tracing
+            client_ip: Client IP address for geolocation enrichment
             
         Yields:
             Either text chunks (str) or status event dicts
@@ -774,9 +797,24 @@ class ChatService:
         
         sources_used: List[Dict[str, str]] = []
         
-        # Get Langfuse client and propagate attributes
+        # Get Langfuse client
         langfuse = get_client()
         
+        # Fetch geolocation if IP provided
+        geo_metadata = {}
+        if client_ip:
+            logger.info(f"🌍 [Streaming] Fetching geolocation for IP: {client_ip}")
+            geo_result = await self.geoip_service.get_geolocation(client_ip)
+            logger.info(f"🌍 [Streaming] GeoIP result: status={geo_result.status}, has_data={geo_result.data is not None}")
+            if geo_result.status == ResultStatus.SUCCESS and geo_result.data:
+                geo_metadata = geo_result.data.to_dict()
+                logger.info(f"🌍 [Streaming] Geo metadata: {geo_metadata}")
+            else:
+                logger.warning(f"🌍 [Streaming] GeoIP failed: {geo_result.status}")
+        else:
+            logger.warning("🌍 [Streaming] No client_ip provided")
+        
+        # Propagate attributes with geo metadata
         propagate_attributes(
             user_id=clerk_user_id or "anonymous",
             session_id=session_id,
@@ -784,7 +822,8 @@ class ChatService:
                 "use_rag": str(use_rag),
                 "has_scores": str(bool(selve_scores)),
                 "streaming": "true",
-                "message_length": str(len(message))
+                "message_length": str(len(message)),
+                **geo_metadata,  # Include geo data: ip, city, state, country, etc.
             },
             tags=["chat", "streaming", "selve-chatbot"]
         )
@@ -830,6 +869,8 @@ class ChatService:
                 
                 # Stream response and collect for Langfuse
                 full_response_chunks = []
+                stream_metadata = None
+                
                 async for chunk in self.llm_service.generate_response_stream(
                     messages=messages,
                     temperature=0.7,
@@ -839,20 +880,45 @@ class ChatService:
                     if self._shutdown_event.is_set():
                         logger.info("Shutdown requested, stopping stream")
                         break
-                    if isinstance(chunk, str):
+                    
+                    # Check if this is the metadata object (dict with __metadata__ flag)
+                    if isinstance(chunk, dict) and chunk.get("__metadata__"):
+                        stream_metadata = chunk
+                        logger.info(f"📊 Captured stream metadata: {stream_metadata}")
+                    elif isinstance(chunk, str):
                         full_response_chunks.append(chunk)
-                    yield chunk
+                        yield chunk
                 
-                # Update generation with collected output
+                # Update generation with collected output and usage data
                 full_response = "".join(full_response_chunks)
-                generation.update(
-                    output=full_response,  # Clean string output
-                    metadata={
-                        "provider": self.llm_service.provider,
+                
+                update_params = {
+                    "output": full_response,  # Clean string output
+                    "metadata": {
                         "sources_count": len(sources_used),
                         "context_used": context_result.context_info is not None,
+                        **geo_metadata,  # Include geographic metadata in generation
                     }
-                )
+                }
+                
+                # Add usage and cost if metadata was captured
+                if stream_metadata:
+                    logger.info(f"✅ Updating Langfuse with metadata: cost={stream_metadata.get('cost')}, usage={stream_metadata.get('usage')}")
+                    update_params["model"] = stream_metadata.get("model")
+                    update_params["usage_details"] = {
+                        "input": stream_metadata["usage"].get("input_tokens", 0),
+                        "output": stream_metadata["usage"].get("output_tokens", 0),
+                    }
+                    update_params["metadata"]["provider"] = stream_metadata.get("provider")
+                    update_params["metadata"]["cost"] = stream_metadata.get("cost")
+                    
+                    # Add GPT-5 specific metadata if present
+                    if stream_metadata.get("reasoning_effort"):
+                        update_params["metadata"]["reasoning_effort"] = stream_metadata["reasoning_effort"]
+                    if stream_metadata.get("text_verbosity"):
+                        update_params["metadata"]["text_verbosity"] = stream_metadata["text_verbosity"]
+                
+                generation.update(**update_params)
                 
                 # Phase 4: Citation
                 if emit_status and sources_used:

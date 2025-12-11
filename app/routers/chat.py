@@ -1,13 +1,14 @@
 """
 Chat API Router
 """
-from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from app.models.chat import ChatRequest, ChatResponse, HealthResponse
 from app.services.chat_service import ChatService
 from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
 from app.services.compression_service import CompressionService
+from app.services.geoip_service import GeoIPService
 import os
 import json
 import asyncio
@@ -18,6 +19,11 @@ router = APIRouter(prefix="/api", tags=["chat"])
 def get_compression_service():
     """Get CompressionService instance"""
     return CompressionService()
+
+
+def get_geoip_service():
+    """Get GeoIPService instance"""
+    return GeoIPService()
 
 
 # Dependency injection for services
@@ -39,8 +45,10 @@ def get_session_service():
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    http_request: Request,
     chat_service: ChatService = Depends(get_chat_service),
-    session_service: SessionService = Depends(get_session_service)
+    session_service: SessionService = Depends(get_session_service),
+    geoip_service: GeoIPService = Depends(get_geoip_service),
 ):
     """
     Chat endpoint with RAG support and user profile personalization
@@ -49,6 +57,11 @@ async def chat(
     and user's personality assessment data.
     """
     try:
+        # Extract client IP from request headers
+        client_ip = geoip_service.extract_client_ip(dict(http_request.headers))
+        if not client_ip and http_request.client:
+            client_ip = http_request.client.host
+        
         # Convert Pydantic messages to dict format
         conversation_history = None
         if request.conversation_history:
@@ -57,7 +70,7 @@ async def chat(
                 for msg in request.conversation_history
             ]
 
-        # Generate response with user context
+        # Generate response with user context and geolocation
         result = await chat_service.generate_response(
             message=request.message,
             conversation_history=conversation_history,
@@ -66,6 +79,7 @@ async def chat(
             selve_scores=request.selve_scores,
             assessment_url=request.assessment_url,
             session_id=request.session_id,
+            client_ip=client_ip,
         )
 
         # Save messages to session if session_id provided
@@ -93,10 +107,12 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(
     request: ChatRequest,
+    http_request: Request,
     background_tasks: BackgroundTasks,
     chat_service: ChatService = Depends(get_chat_service),
     session_service: SessionService = Depends(get_session_service),
-    compression_service: CompressionService = Depends(get_compression_service)
+    compression_service: CompressionService = Depends(get_compression_service),
+    geoip_service: GeoIPService = Depends(get_geoip_service),
 ):
     """
     Streaming chat endpoint with RAG support and user profile personalization
@@ -104,6 +120,11 @@ async def chat_stream(
     Returns Server-Sent Events (SSE) stream of response chunks
     """
     try:
+        # Extract client IP from request headers
+        client_ip = geoip_service.extract_client_ip(dict(http_request.headers))
+        if not client_ip and http_request.client:
+            client_ip = http_request.client.host
+        
         # Convert Pydantic messages to dict format
         conversation_history = None
         if request.conversation_history:
@@ -144,6 +165,7 @@ async def chat_stream(
                 assessment_url=request.assessment_url,
                 emit_status=True,
                 session_id=request.session_id,
+                client_ip=client_ip,
             ):
                 # Check if this is a status event (dict) or text chunk (str)
                 if isinstance(event, dict):

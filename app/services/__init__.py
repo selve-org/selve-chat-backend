@@ -104,6 +104,11 @@ from .conversation_state_service import (
 	ConversationIntent,
 )
 
+from .geoip_service import (
+	GeoIPService,
+	GeoIPInfo,
+)
+
 __all__ = [
 	# Base
 	"Config",
@@ -147,6 +152,9 @@ __all__ = [
 	"ConversationState",
 	"EmotionalTone",
 	"ConversationIntent",
+	# GeoIP
+	"GeoIPService",
+	"GeoIPInfo",
 ]
 
 __version__ = "2.0.0"
