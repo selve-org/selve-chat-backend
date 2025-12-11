@@ -30,8 +30,10 @@ langfuse==3.10.5
 
 # Content Crawling Tools
 youtube-transcript-api==0.6.2
+httpx==0.26.0
+redis==5.0.1
+beautifulsoup4==4.12.3
+lxml==4.9.4
 
 # Optional: For development
 pytest==7.4.4
-httpx==0.26.0
-redis==5.0.1
