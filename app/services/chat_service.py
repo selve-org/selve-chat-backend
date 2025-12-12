@@ -631,6 +631,12 @@ class ChatService:
             )
         
         # Build context (RAG, memories, personality)
+        # Debug: Log what scores are being passed
+        if selve_scores:
+            logger.info(f"📊 Scores being passed to context: {selve_scores}")
+        else:
+            logger.info("📊 No scores available for context")
+        
         context_result = await self.context_service.build_context(
             message=message,
             clerk_user_id=clerk_user_id,

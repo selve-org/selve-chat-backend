@@ -1,0 +1,61 @@
+name: Schema Sync Check
+
+on:
+  push:
+    branches: [main, develop, staging]
+    paths:
+      - 'prisma/schema.prisma'
+  pull_request:
+    branches: [main, develop, staging]
+    paths:
+      - 'prisma/schema.prisma'
+
+jobs:
+  schema-sync:
+    runs-on: ubuntu-latest
+    name: Verify Prisma schema matches main backend
+
+    steps:
+      - name: Checkout chat backend
+        uses: actions/checkout@v4
+        with:
+          path: chat-backend
+
+      - name: Checkout main SELVE backend
+        uses: actions/checkout@v4
+        with:
+          repository: selve-org/selve
+          path: main-backend
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check schema sync
+        run: |
+          echo "🔍 Checking schema sync between repos..."
+          
+          CHAT_SCHEMA="chat-backend/prisma/schema.prisma"
+          MAIN_SCHEMA="main-backend/backend/schema.prisma"
+          
+          if [ ! -f "$CHAT_SCHEMA" ]; then
+            echo "❌ Chat backend schema not found at $CHAT_SCHEMA"
+            exit 1
+          fi
+          
+          if [ ! -f "$MAIN_SCHEMA" ]; then
+            echo "❌ Main backend schema not found at $MAIN_SCHEMA"
+            exit 1
+          fi
+          
+          if diff -q "$CHAT_SCHEMA" "$MAIN_SCHEMA" > /dev/null 2>&1; then
+            echo "✅ Schemas are in sync!"
+            exit 0
+          else
+            echo "❌ SCHEMA MISMATCH!"
+            echo ""
+            echo "Differences:"
+            diff "$CHAT_SCHEMA" "$MAIN_SCHEMA" || true
+            echo ""
+            echo "⚠️  Both backends must use the same schema."
+            echo "💡 Update the chat backend schema to match the main backend."
+            exit 1
+          fi
+        shell: bash

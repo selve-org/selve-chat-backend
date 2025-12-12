@@ -59,16 +59,17 @@ class UserProfileService:
             if not result:
                 return None
 
-            # Format scores for easy consumption
+            # Format scores for easy consumption - ALWAYS include all 8 dimensions
+            # Use 0 as default for missing/null values so chatbot knows they weren't assessed
             scores = {
-                "LUMEN": result.scoreLumen,
-                "AETHER": result.scoreAether,
-                "ORPHEUS": result.scoreOrpheus,
-                "ORIN": result.scoreOrin,
-                "LYRA": result.scoreLyra,
-                "VARA": result.scoreVara,
-                "CHRONOS": result.scoreChronos,
-                "KAEL": result.scoreKael,
+                "LUMEN": result.scoreLumen if result.scoreLumen is not None else 0,
+                "AETHER": result.scoreAether if result.scoreAether is not None else 0,
+                "ORPHEUS": result.scoreOrpheus if result.scoreOrpheus is not None else 0,
+                "ORIN": result.scoreOrin if result.scoreOrin is not None else 0,
+                "LYRA": result.scoreLyra if result.scoreLyra is not None else 0,
+                "VARA": result.scoreVara if result.scoreVara is not None else 0,
+                "CHRONOS": result.scoreChronos if result.scoreChronos is not None else 0,
+                "KAEL": result.scoreKael if result.scoreKael is not None else 0,
             }
 
             return {
@@ -169,16 +170,17 @@ class UserProfileService:
                     "clerk_user_id": clerk_user_id
                 }
 
-            # Format scores
+            # Format scores - ALWAYS include all 8 dimensions
+            # Use 0 as default for missing/null values so chatbot knows they weren't assessed
             scores = {
-                "LUMEN": result.scoreLumen,
-                "AETHER": result.scoreAether,
-                "ORPHEUS": result.scoreOrpheus,
-                "ORIN": result.scoreOrin,
-                "LYRA": result.scoreLyra,
-                "VARA": result.scoreVara,
-                "CHRONOS": result.scoreChronos,
-                "KAEL": result.scoreKael,
+                "LUMEN": result.scoreLumen if result.scoreLumen is not None else 0,
+                "AETHER": result.scoreAether if result.scoreAether is not None else 0,
+                "ORPHEUS": result.scoreOrpheus if result.scoreOrpheus is not None else 0,
+                "ORIN": result.scoreOrin if result.scoreOrin is not None else 0,
+                "LYRA": result.scoreLyra if result.scoreLyra is not None else 0,
+                "VARA": result.scoreVara if result.scoreVara is not None else 0,
+                "CHRONOS": result.scoreChronos if result.scoreChronos is not None else 0,
+                "KAEL": result.scoreKael if result.scoreKael is not None else 0,
             }
 
             # Get narrative summary if available

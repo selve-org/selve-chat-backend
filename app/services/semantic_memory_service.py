@@ -548,7 +548,8 @@ Format your response as JSON ONLY (no markdown, no explanation):
         """
         Check if it's time to extract semantic memory.
 
-        Triggers extraction every N episodes.
+        Triggers extraction when sufficient episodes exist and extraction
+        hasn't been done recently (or periodically every N episodes).
 
         Args:
             clerk_user_id: Clerk user ID
@@ -566,10 +567,28 @@ Format your response as JSON ONLY (no markdown, no explanation):
             )
 
             count = len(episodes)
-            return (
-                count >= self.MIN_EPISODES_FOR_EXTRACTION
-                and count % self.EXTRACTION_INTERVAL_EPISODES == 0
-            )
+            
+            # Trigger if we have minimum episodes and haven't extracted recently
+            # OR trigger every N episodes
+            if count >= self.MIN_EPISODES_FOR_EXTRACTION:
+                # Check if we've extracted in the last 24 hours
+                from datetime import datetime, timedelta
+                cutoff = datetime.utcnow() - timedelta(hours=24)
+                
+                recent_extractions = await self.db.semanticmemory.find_many(
+                    where={
+                        "userId": episodes[0].userId if episodes else None,
+                        "createdAt": {"gte": cutoff}
+                    }
+                ) if episodes else []
+                
+                # Extract if no recent extraction OR on extraction interval
+                return (
+                    len(recent_extractions) == 0 
+                    or count % self.EXTRACTION_INTERVAL_EPISODES == 0
+                )
+            
+            return False
 
         except Exception as e:
             self.logger.error(f"Failed to check extraction trigger: {e}")

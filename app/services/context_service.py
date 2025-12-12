@@ -235,24 +235,24 @@ class ContextService:
 
         # Sort by score descending
         sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        top_3 = sorted_scores[:3]
 
         parts = [
-            "USER'S SELVE PROFILE:",
+            "USER'S SELVE SCORES (Complete Profile):",
             "",
-            "Strongest dimensions:",
         ]
 
-        for dim, score in top_3:
+        for dim, score in sorted_scores:
             desc = DIMENSION_DESCRIPTIONS.get(dim, dim)
             parts.append(f"  • {dim}: {int(score)}/100 - {desc}")
 
         parts.extend([
             "",
-            "When responding:",
-            "- Reference their specific scores when relevant to the question",
-            "- Provide personalized insights based on their profile",
-            "- Help them understand how their scores influence their behavior",
+            "CRITICAL INSTRUCTIONS:",
+            "- When user asks about 'strongest', 'weakest', 'high', 'low', or 'dimensions', ALWAYS reference these exact scores",
+            "- If user asks about personality, strengths, or how they are, proactively mention these scores",
+            "- ALWAYS show the complete list when discussing their profile",
+            "- Use these scores to provide personalized, specific insights",
+            "- Connect their actual scores to real-world implications",
         ])
 
         return "\n".join(parts)
@@ -317,6 +317,9 @@ class ContextService:
         user_context = None
         if selve_scores:
             user_context = self._format_scores_for_context(selve_scores)
+            self.logger.info(f"✅ User context formatted with {len(selve_scores)} dimension scores")
+        else:
+            self.logger.info("⚠️ No selve_scores provided to build_context")
 
         # Format episodic memory context
         memory_context = None

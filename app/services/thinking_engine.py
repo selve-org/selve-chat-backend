@@ -14,6 +14,7 @@ Each step emits status events for the ThinkingIndicator UI.
 
 import asyncio
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -36,8 +37,8 @@ class ThinkingConfig:
     
     # Tool settings
     RAG_ENABLED: bool = True
-    WEB_SEARCH_ENABLED: bool = False  # Enable when crawler is ready
-    YOUTUBE_SEARCH_ENABLED: bool = False  # Enable when crawler is ready
+    WEB_SEARCH_ENABLED: bool = os.getenv("WEB_SEARCH_ENABLED", "false").lower() == "true"
+    YOUTUBE_SEARCH_ENABLED: bool = os.getenv("YOUTUBE_SEARCH_ENABLED", "false").lower() == "true"
     
     # Response settings
     MAX_THINKING_STEPS: int = 5
@@ -371,6 +372,26 @@ class IntentClassifier:
                     emotional_tone=emotional_tone,
                 )
         
+        # External references or research-heavy questions
+        external_patterns = [
+            r"\b(article|blog|study|research|paper|book|video|youtube|podcast|report)\b",
+            r"(found|came across|saw|read|heard).{0,40}(about|that|saying)",
+            r"\b(what|who|where|when|how).{0,50}(is|are|was|were).{0,50}(company|organization|person|technology|product)\b",
+            r"(latest|recent|new|current).{0,30}(news|trends|updates|research|studies)\b",
+        ]
+        if any(re.search(pattern, message_lower) for pattern in external_patterns):
+            return AnalysisResult(
+                intent=UserIntent.OFF_TOPIC,
+                confidence=0.7,
+                needs_rag=False,
+                needs_personality_context=False,
+                needs_web_research=True,
+                key_topics=["research"],
+                referenced_dimensions=[],
+                is_follow_up=is_follow_up,
+                emotional_tone=emotional_tone,
+            )
+        
         # Follow-up or continuation
         if is_follow_up:
             return AnalysisResult(
@@ -632,6 +653,7 @@ class ThinkingEngine:
                 message=message,
                 conversation_history=conversation_history,
                 rag_context=execution_result.rag_context,
+                web_research=execution_result.web_research,
             )
             
             # Stream response
@@ -760,8 +782,9 @@ class ThinkingEngine:
                     pass
                 
                 elif step.action == "web_search":
-                    # Future: implement web search
-                    pass
+                    web_result = await self._execute_web_search(message)
+                    result.web_research = web_result.get("context")
+                    result.web_sources = web_result.get("sources", [])
             
             except Exception as e:
                 result.errors.append(f"{step.action}: {str(e)}")
@@ -813,6 +836,76 @@ class ThinkingEngine:
         
         except Exception as e:
             self.logger.error(f"RAG search failed: {e}")
+            return {"context": None, "sources": []}
+    
+    async def _execute_web_search(
+        self,
+        message: str,
+    ) -> Dict[str, Any]:
+        """Execute web search using crawler tools."""
+        try:
+            from app.tools.crawler.tools import YouTubeTool, RedditTool, WebPageTool
+            from app.tools.crawler.core import YouTubeRequest, RedditRequest, WebpageRequest
+            
+            sources = []
+            contexts = []
+            
+            # For now, just search Reddit and web pages (no YouTube needed without URLs)
+            # In the future, could extract URLs from message and fetch those
+            
+            # Try Reddit search
+            try:
+                reddit_tool = RedditTool()
+                reddit_request = RedditRequest(
+                    query=message,
+                    limit=5,
+                    subreddits=["psychology", "selfimprovement", "mbti", "personalitytypes"],
+                )
+                reddit_results = await reddit_tool.search(reddit_request)
+                await reddit_tool.close()
+                
+                for result in reddit_results[:3]:  # Limit to top 3
+                    if result.is_valid:
+                        sources.append({
+                            "title": result.title,
+                            "source": "reddit",
+                            "url": result.url,
+                        })
+                        contexts.append(f"Reddit - {result.title}: {result.content[:500]}")
+                
+            except Exception as e:
+                self.logger.warning(f"Reddit search failed: {e}")
+            
+            # Try web search for personality/psychology resources
+            try:
+                webpage_tool = WebPageTool()
+                # Build a simple search query for personality resources
+                search_query = f"personality psychology {message}"
+                
+                # Could fetch specific URLs if mentioned in message
+                # For now, we'd need a proper web search engine integration
+                # This is a placeholder for when that's implemented
+                
+                await webpage_tool.close()
+                
+            except Exception as e:
+                self.logger.warning(f"Web search failed: {e}")
+            
+            if contexts:
+                combined_context = "\n\n".join(contexts)
+                return {
+                    "context": combined_context[:2000],  # Limit context length
+                    "sources": sources,
+                }
+            
+            return {"context": None, "sources": []}
+        
+        except asyncio.TimeoutError:
+            self.logger.warning("Web search timed out")
+            return {"context": None, "sources": []}
+        
+        except Exception as e:
+            self.logger.error(f"Web search failed: {e}")
             return {"context": None, "sources": []}
     
     # =========================================================================
@@ -901,6 +994,7 @@ class ThinkingEngine:
         message: str,
         conversation_history: List[Dict[str, str]],
         rag_context: Optional[str],
+        web_research: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """Build message list for LLM."""
         messages = [{"role": "system", "content": system_prompt}]
@@ -914,13 +1008,18 @@ class ThinkingEngine:
                         "content": msg["content"],
                     })
         
-        # Build user message with RAG context
+        # Build user message with context
         user_message = message
+        context_parts = []
+        
         if rag_context:
-            user_message = (
-                f"<knowledge_context>\n{rag_context}\n</knowledge_context>\n\n"
-                f"User Question: {message}"
-            )
+            context_parts.append(f"<knowledge_context>\n{rag_context}\n</knowledge_context>")
+        
+        if web_research:
+            context_parts.append(f"<web_research>\n{web_research}\n</web_research>")
+        
+        if context_parts:
+            user_message = "\n\n".join(context_parts) + f"\n\nUser Question: {message}"
         
         messages.append({"role": "user", "content": user_message})
         
@@ -999,6 +1098,7 @@ class ThinkingEngine:
                 message=message,
                 conversation_history=conversation_history,
                 rag_context=execution_result.rag_context,
+                web_research=execution_result.web_research,
             )
             
             # Non-streaming generation

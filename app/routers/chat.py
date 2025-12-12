@@ -10,9 +10,13 @@ from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
 from app.services.compression_service import CompressionService
 from app.services.geoip_service import GeoIPService
+from app.services.semantic_memory_service import SemanticMemoryService
 import os
 import json
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -46,6 +50,106 @@ def get_rag_service():
 def get_session_service():
     """Get SessionService instance"""
     return SessionService()
+
+
+def get_semantic_memory_service():
+    """Get SemanticMemoryService instance"""
+    return SemanticMemoryService()
+
+
+async def extract_and_store_memory(
+    clerk_user_id: str,
+    session_id: str,
+    enable_memory: bool = True
+):
+    """
+    Background task to extract and store semantic memory from conversation.
+    
+    Also creates episodic memory entries from recent turns to enable
+    semantic memory extraction.
+    
+    Args:
+        clerk_user_id: User's Clerk ID
+        session_id: Chat session ID
+        enable_memory: Whether to enable memory extraction
+    """
+    if not enable_memory or not clerk_user_id:
+        return
+    
+    try:
+        from app.db import db
+        
+        # Get session to retrieve user ID
+        session = await db.chatsession.find_unique(where={"id": session_id})
+        if not session or not session.userId:
+            logger.warning(f"Session {session_id} not found or missing userId")
+            return
+        
+        # Check if we should create an episodic memory for this turn
+        # Count existing episodic memories for this session
+        existing_episodes = await db.episodicmemory.count(
+            where={"sessionId": session_id}
+        )
+        
+        # Create episodic memory for every 2-3 turns to enable semantic extraction
+        if existing_episodes < 5:  # Keep building up episodic memories
+            try:
+                # Get recent messages from this session
+                recent_msgs = await db.chatmessage.find_many(
+                    where={"sessionId": session_id},
+                    order={"createdAt": "desc"},
+                    take=4  # Last 2 turns (user + assistant)
+                )
+                
+                if len(recent_msgs) >= 2:
+                    # Create episodic memory from these turns
+                    turn_content = "\n".join(
+                        f"{msg.role.upper()}: {msg.content}"
+                        for msg in reversed(recent_msgs)
+                    )
+                    
+                    from prisma import Json
+                    await db.episodicmemory.create(
+                        data={
+                            "userId": session.userId,
+                            "sessionId": session_id,
+                            "title": f"Conversation Turn {existing_episodes + 1}",
+                            "summary": turn_content[:500],  # Truncate if needed
+                            "keyInsights": Json([]),
+                            "unresolvedTopics": Json([]),
+                            "emotionalState": "engaged",
+                            "sourceMessageIds": [msg.id for msg in recent_msgs],
+                            "compressionModel": "chat-turn",
+                            "compressionCost": 0.0,
+                            "spanStart": recent_msgs[-1].createdAt,
+                            "spanEnd": recent_msgs[0].createdAt,
+                            "embedded": False
+                        }
+                    )
+                    logger.info(f"✓ Created episodic memory for session {session_id}")
+            except Exception as e:
+                logger.debug(f"Could not create episodic memory: {e}")
+        
+        # Try to extract semantic memory
+        memory_service = SemanticMemoryService()
+        should_extract_result = await memory_service.should_extract(clerk_user_id)
+        
+        # should_extract returns a bool, not Result
+        if should_extract_result:
+            # Extract and save semantic memory
+            extract_result = await memory_service.extract_and_save(
+                clerk_user_id=clerk_user_id,
+                user_id=session.userId
+            )
+            if extract_result.is_success:
+                logger.info(f"✓ Semantic memory extracted: {extract_result.data}")
+            else:
+                logger.debug(f"Memory extraction failed: {extract_result.error}")
+        else:
+            ep_count = await db.episodicmemory.count()
+            logger.debug(f"Not yet time for semantic memory extraction ({ep_count} total episodes)")
+    except Exception as e:
+        logger.error(f"Error extracting memory for session {session_id}: {e}", exc_info=True)
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -212,6 +316,14 @@ async def chat_stream(
         # Register background tasks
         if request.session_id:
             background_tasks.add_task(save_assistant_message)
+            # Also trigger memory extraction
+            enable_memory = os.getenv("ENABLE_SEMANTIC_MEMORY", "true").lower() == "true"
+            background_tasks.add_task(
+                extract_and_store_memory,
+                clerk_user_id=request.clerk_user_id,
+                session_id=request.session_id,
+                enable_memory=enable_memory
+            )
 
         return StreamingResponse(
             generate(),
