@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, 
 from fastapi.responses import StreamingResponse
 from app.models.chat import ChatRequest, ChatResponse, HealthResponse
 from app.services.chat_service import ChatService
+from app.services.agentic_chat_service import AgenticChatService, get_chat_service as get_agentic_chat_service
 from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
 from app.services.compression_service import CompressionService
@@ -28,8 +29,13 @@ def get_geoip_service():
 
 # Dependency injection for services
 def get_chat_service():
-    """Get ChatService instance"""
+    """Get legacy ChatService instance"""
     return ChatService()
+
+
+def get_agent_chat_service():
+    """Get AgenticChatService instance"""
+    return get_agentic_chat_service()
 
 
 def get_rag_service():
@@ -109,7 +115,7 @@ async def chat_stream(
     request: ChatRequest,
     http_request: Request,
     background_tasks: BackgroundTasks,
-    chat_service: ChatService = Depends(get_chat_service),
+    chat_service: AgenticChatService = Depends(get_agent_chat_service),
     session_service: SessionService = Depends(get_session_service),
     compression_service: CompressionService = Depends(get_compression_service),
     geoip_service: GeoIPService = Depends(get_geoip_service),
@@ -156,16 +162,13 @@ async def chat_stream(
 
         # Generate streaming response with status events
         async def generate():
-            async for event in chat_service.generate_response_stream(
+            async for event in chat_service.chat_stream(
                 message=request.message,
                 conversation_history=conversation_history,
-                use_rag=request.use_rag,
                 clerk_user_id=request.clerk_user_id,
-                selve_scores=request.selve_scores,
-                assessment_url=request.assessment_url,
-                emit_status=True,
                 session_id=request.session_id,
                 client_ip=client_ip,
+                emit_status=True,
             ):
                 # Check if this is a status event (dict) or text chunk (str)
                 if isinstance(event, dict):
@@ -176,7 +179,7 @@ async def chat_stream(
                     response_container.content += event
                     yield f"data: {json.dumps({'chunk': event})}\n\n"
 
-            # Check if compression is needed
+            # Check if compression is needed (informational only; compression handled in agent post-process)
             if request.session_id:
                 try:
                     response_container.compression_needed = await compression_service.should_trigger_compression(request.session_id)
@@ -206,29 +209,9 @@ async def chat_stream(
                     content=response_container.content
                 )
 
-        # Background task to trigger compression if needed
-        async def trigger_compression_if_needed():
-            # Wait for message to be saved first
-            await asyncio.sleep(1.0)
-            if response_container.compression_needed and request.session_id and response_container.session_data:
-                try:
-                    result = await compression_service.compress_conversation(
-                        session_id=request.session_id,
-                        user_id=response_container.session_data["userId"],
-                        clerk_user_id=response_container.session_data["clerkUserId"]
-                    )
-                    if result.get("compressed"):
-                        print(f"✅ Auto-compressed session {request.session_id}: {result['messages_compressed']} messages → {result['tokens_saved']} tokens saved")
-                    else:
-                        print(f"⚠️ Compression skipped for session {request.session_id}: {result.get('error', 'Unknown error')}")
-                except Exception as e:
-                    print(f"❌ Auto-compression failed for session {request.session_id}: {e}")
-
         # Register background tasks
         if request.session_id:
             background_tasks.add_task(save_assistant_message)
-            if response_container.compression_needed and response_container.session_data:
-                background_tasks.add_task(trigger_compression_if_needed)
 
         return StreamingResponse(
             generate(),

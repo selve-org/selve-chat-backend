@@ -2,18 +2,21 @@
 SELVE Chatbot Backend API
 FastAPI application with RAG-powered chat endpoint
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 import os
 import logging
+from pathlib import Path
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# Load environment variables from repo-local .env before importing app modules
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 from app.routers import chat, compression, ingestion, sessions, users
 from app.db import connect_db, disconnect_db
-
-# Load environment variables
-load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
