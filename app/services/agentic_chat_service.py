@@ -328,6 +328,11 @@ class AgenticChatService:
                     assessment_status=AssessmentStatus.NOT_TAKEN,
                     has_assessment=False,
                 )
+
+            # If no explicit history was provided, fall back to stored session messages
+            # so the agent preserves context across turns.
+            if not conversation_history and getattr(user_state, "current_session_messages", None):
+                conversation_history = user_state.current_session_messages[-AgentConfig.MAX_HISTORY_MESSAGES:]
             
             # =================================================================
             # PHASE 3-4: THINKING ENGINE (includes analyze, plan, execute, generate)
