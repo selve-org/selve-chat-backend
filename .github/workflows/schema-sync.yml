@@ -26,7 +26,7 @@ jobs:
         with:
           repository: selve-org/selve
           path: main-backend
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SELVE_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Check schema sync
         run: |
