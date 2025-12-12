@@ -36,7 +36,13 @@ class TitleService:
         except InputValidationError:
             return "New Conversation"
 
-        assistant_text = assistant_response or ""
+        assistant_text = (assistant_response or "").strip()
+        
+        # If assistant response is empty or an error message, only summarize user's question
+        has_valid_response = assistant_text and not any(
+            err in assistant_text.lower() 
+            for err in ["error", "sorry, i encountered", "please try again"]
+        )
 
         # Choose a title model that exists for the configured provider
         if getattr(self.llm_service, "provider", "openai") == "anthropic":
@@ -44,14 +50,22 @@ class TitleService:
         else:
             title_model = "gpt-4o-mini"
 
-        prompt = (
-            "Generate a short, descriptive title (max 5 words) for a conversation "
-            "that starts with this exchange.\n"
-            "Summarize both the user's first question and the assistant's first reply.\n\n"
-            f"User's first message:\n\"{first_message[:500]}\"\n\n"
-            f"Assistant's first reply:\n\"{assistant_text[:500]}\"\n\n"
-            "Return ONLY the title text, nothing else. Make it specific and meaningful."
-        )
+        if has_valid_response:
+            prompt = (
+                "Generate a short, descriptive title (max 5 words) for a conversation "
+                "that starts with this exchange.\n"
+                "Summarize both the user's first question and the assistant's first reply.\n\n"
+                f"User's first message:\n\"{first_message[:500]}\"\n\n"
+                f"Assistant's first reply:\n\"{assistant_text[:500]}\"\n\n"
+                "Return ONLY the title text, nothing else. Make it specific and meaningful."
+            )
+        else:
+            prompt = (
+                "Generate a short, descriptive title (max 5 words) that summarizes "
+                "this user's question or request.\n\n"
+                f"User's message:\n\"{first_message[:500]}\"\n\n"
+                "Return ONLY the title text, nothing else. Make it specific and meaningful."
+            )
 
         try:
             response = await asyncio.wait_for(

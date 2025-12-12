@@ -208,13 +208,16 @@ class UserState:
         if self.scores:
             parts.append("")
             parts.append("### SELVE SCORES ###")
+            parts.append("ALL 8 DIMENSIONS (0 = not yet assessed):")
             
-            for dim, score in self.scores.top_dimensions:
-                parts.append(f"  🔝 {dim}: {int(score)}/100 (strength)")
+            # Get all scores sorted by value
+            all_scores = sorted(self.scores.to_dict().items(), key=lambda x: x[1], reverse=True)
             
-            parts.append("")
-            for dim, score in self.scores.growth_areas:
-                parts.append(f"  📈 {dim}: {int(score)}/100 (growth area)")
+            for dim, score in all_scores:
+                if score == 0:
+                    parts.append(f"  {dim}: {int(score)}/100 (not yet assessed)")
+                else:
+                    parts.append(f"  {dim}: {int(score)}/100")
         
         # === Friend Assessments ===
         if self.friend_assessments:

@@ -351,6 +351,27 @@ class IntentClassifier:
                 emotional_tone=emotional_tone,
             )
         
+        # Question about scores/results (highest priority for assessment users)
+        if has_assessment:
+            score_patterns = [
+                r"\b(show|tell|what).{0,20}\b(my|me)\b.{0,20}\b(score|result|dimension|profile)s?\b",
+                r"\b(my|me)\b.{0,20}\b(score|result|dimension|profile)s?\b",
+                r"\bwhat\s+(are|is)\s+my\b.{0,20}\b(score|result|dimension)s?\b",
+            ]
+            for pattern in score_patterns:
+                if re.search(pattern, message_lower, re.I):
+                    return AnalysisResult(
+                        intent=UserIntent.QUESTION_ABOUT_SELF,
+                        confidence=0.95,
+                        needs_rag=False,
+                        needs_personality_context=True,
+                        needs_web_research=False,
+                        key_topics=["scores", "profile"],
+                        referenced_dimensions=[],
+                        is_follow_up=is_follow_up,
+                        emotional_tone=emotional_tone,
+                    )
+        
         # Question about self (personality exploration)
         self_patterns = [
             r"\b(my|me|i|myself)\b.*\b(personality|type|trait|character)\b",
@@ -953,6 +974,14 @@ class ThinkingEngine:
             UserIntent.GREETING: (
                 "Keep your greeting brief and warm. "
                 f"{'Reference their SELVE profile naturally.' if has_assessment else 'Gently mention the assessment if appropriate.'}"
+            ),
+            
+            UserIntent.QUESTION_ABOUT_SELF: (
+                "When showing scores or results, ALWAYS list ALL 8 dimensions with their exact scores. "
+                "Never omit dimensions. Show: LUMEN, AETHER, ORPHEUS, ORIN, LYRA, VARA, CHRONOS, KAEL. "
+                "CRITICAL: A score of 0 means that dimension was not assessed, NOT that it's pending or missing. "
+                "Say '0/100 (not yet assessed)' for 0 scores, not 'pending' or 'not shown'. "
+                "List all 8 dimensions every time, including the 0s."
             ),
             
             UserIntent.QUESTION_ABOUT_DIMENSION: (

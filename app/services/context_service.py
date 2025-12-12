@@ -248,11 +248,14 @@ class ContextService:
         parts.extend([
             "",
             "CRITICAL INSTRUCTIONS:",
-            "- When user asks about 'strongest', 'weakest', 'high', 'low', or 'dimensions', ALWAYS reference these exact scores",
-            "- If user asks about personality, strengths, or how they are, proactively mention these scores",
-            "- ALWAYS show the complete list when discussing their profile",
+            "- When user asks about 'scores', 'results', 'dimensions', or 'profile', ALWAYS list ALL 8 dimensions with their scores",
+            "- NEVER omit dimensions - show all 8 even if some are 0 or low scores",
+            "- A score of 0 means 'not yet assessed' - show it as '0/100 (not yet assessed)', NOT as 'pending' or 'missing'",
+            "- When user asks about 'strongest', 'weakest', 'high', or 'low', still show the complete list first, then highlight specific ones",
+            "- If user asks about personality or strengths, proactively mention ALL scores with context",
             "- Use these scores to provide personalized, specific insights",
             "- Connect their actual scores to real-world implications",
+            "- Format: List all 8 dimensions clearly, then optionally group by strength levels",
         ])
 
         return "\n".join(parts)
