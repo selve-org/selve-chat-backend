@@ -49,6 +49,17 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("👋 Shutting down SELVE Chatbot Backend...")
+
+    # Flush Langfuse traces before shutdown
+    try:
+        from app.services.langfuse_service import get_langfuse_service
+        langfuse_service = get_langfuse_service()
+        logger.info("🔄 Flushing Langfuse traces...")
+        langfuse_service.flush()
+        logger.info("✅ Langfuse traces flushed")
+    except Exception as e:
+        logger.warning(f"Failed to flush Langfuse traces: {e}")
+
     await disconnect_db()
     logger.info("✅ Database disconnected")
 
