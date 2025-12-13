@@ -485,7 +485,9 @@ class AgenticChatService:
                     update_params["metadata"]["provider"] = stream_metadata.get("provider")
                     if stream_metadata.get("cost") is not None:
                         update_params["cost_details"] = {
-                            "total": stream_metadata.get("cost")
+                            "total": stream_metadata.get("cost"),
+                            "input": stream_metadata.get("input_cost"),
+                            "output": stream_metadata.get("output_cost")
                         }
                 else:
                     self.logger.warning("⚠️ No stream metadata captured - cost and usage will be missing")

@@ -304,12 +304,16 @@ class LLMService:
             )
         
         response = self._with_retry(make_request, f"Anthropic ({model})")
-        
+
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
         input_price, output_price = self.MODEL_PRICING.get(model, (0, 0))
-        cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
-        
+
+        # Calculate costs separately for better visibility
+        input_cost = (input_tokens * input_price) / 1_000_000
+        output_cost = (output_tokens * output_price) / 1_000_000
+        total_cost = input_cost + output_cost
+
         return {
             "content": response.content[0].text,
             "model": model,
@@ -319,7 +323,9 @@ class LLMService:
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens
             },
-            "cost": cost
+            "cost": total_cost,  # Total cost for backward compatibility
+            "input_cost": input_cost,  # Separate input cost
+            "output_cost": output_cost  # Separate output cost
         }
 
     def _generate_openai(self, messages, temperature, max_tokens, model: str = None):
@@ -344,12 +350,16 @@ class LLMService:
             return self.openai.chat.completions.create(**request_params)
         
         response = self._with_retry(make_request, f"OpenAI ({model})")
-        
+
         input_tokens = response.usage.prompt_tokens
         output_tokens = response.usage.completion_tokens
         input_price, output_price = self.MODEL_PRICING.get(model, (0, 0))
-        cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
-        
+
+        # Calculate costs separately for better visibility
+        input_cost = (input_tokens * input_price) / 1_000_000
+        output_cost = (output_tokens * output_price) / 1_000_000
+        total_cost = input_cost + output_cost
+
         return {
             "content": response.choices[0].message.content,
             "model": model,
@@ -361,7 +371,9 @@ class LLMService:
                 "output_tokens": output_tokens,
                 "total_tokens": response.usage.total_tokens
             },
-            "cost": cost
+            "cost": total_cost,  # Total cost for backward compatibility
+            "input_cost": input_cost,  # Separate input cost
+            "output_cost": output_cost  # Separate output cost
         }
 
     async def generate_response_async(
@@ -442,8 +454,12 @@ class LLMService:
             input_tokens = final_message.usage.input_tokens
             output_tokens = final_message.usage.output_tokens
             input_price, output_price = self.MODEL_PRICING.get(model, (0, 0))
-            cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
-            
+
+            # Calculate costs separately for better visibility
+            input_cost = (input_tokens * input_price) / 1_000_000
+            output_cost = (output_tokens * output_price) / 1_000_000
+            total_cost = input_cost + output_cost
+
             metadata = {
                 "__metadata__": True,
                 "model": model,
@@ -453,7 +469,9 @@ class LLMService:
                     "output_tokens": output_tokens,
                     "total_tokens": input_tokens + output_tokens
                 },
-                "cost": cost
+                "cost": total_cost,  # Total cost for backward compatibility
+                "input_cost": input_cost,  # Separate input cost
+                "output_cost": output_cost  # Separate output cost
             }
             
             logger.info(f"🔍 Anthropic stream metadata: {metadata}")
@@ -506,8 +524,12 @@ class LLMService:
             input_tokens = usage_data.prompt_tokens
             output_tokens = usage_data.completion_tokens
             input_price, output_price = self.MODEL_PRICING.get(model, (0, 0))
-            cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
-            
+
+            # Calculate costs separately for better visibility
+            input_cost = (input_tokens * input_price) / 1_000_000
+            output_cost = (output_tokens * output_price) / 1_000_000
+            total_cost = input_cost + output_cost
+
             yield {
                 "__metadata__": True,
                 "model": model,
@@ -519,5 +541,7 @@ class LLMService:
                     "output_tokens": output_tokens,
                     "total_tokens": usage_data.total_tokens
                 },
-                "cost": cost
+                "cost": total_cost,  # Total cost for backward compatibility
+                "input_cost": input_cost,  # Separate input cost
+                "output_cost": output_cost  # Separate output cost
             }
