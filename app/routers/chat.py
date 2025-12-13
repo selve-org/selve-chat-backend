@@ -4,13 +4,15 @@ Chat API Router
 from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from app.models.chat import ChatRequest, ChatResponse, HealthResponse
-from app.services.chat_service import ChatService
 from app.services.agentic_chat_service import AgenticChatService, get_chat_service as get_agentic_chat_service
 from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
 from app.services.compression_service import CompressionService
 from app.services.geoip_service import GeoIPService
 from app.services.semantic_memory_service import SemanticMemoryService
+from app.services.security_service import SecurityService
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 import os
 import json
 import asyncio
@@ -19,6 +21,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+# Get limiter from app state (will be injected at runtime)
+limiter = Limiter(key_func=get_remote_address)
 
 
 def get_compression_service():
@@ -32,11 +37,6 @@ def get_geoip_service():
 
 
 # Dependency injection for services
-def get_chat_service():
-    """Get legacy ChatService instance"""
-    return ChatService()
-
-
 def get_agent_chat_service():
     """Get AgenticChatService instance"""
     return get_agentic_chat_service()
@@ -57,6 +57,11 @@ def get_semantic_memory_service():
     return SemanticMemoryService()
 
 
+def get_security_service():
+    """Get SecurityService instance"""
+    return SecurityService()
+
+
 async def extract_and_store_memory(
     clerk_user_id: str,
     session_id: str,
@@ -64,14 +69,6 @@ async def extract_and_store_memory(
 ):
     """
     Background task to extract and store semantic memory from conversation.
-    
-    Also creates episodic memory entries from recent turns to enable
-    semantic memory extraction.
-    
-    Args:
-        clerk_user_id: User's Clerk ID
-        session_id: Chat session ID
-        enable_memory: Whether to enable memory extraction
     """
     if not enable_memory or not clerk_user_id:
         return
@@ -79,30 +76,24 @@ async def extract_and_store_memory(
     try:
         from app.db import db
         
-        # Get session to retrieve user ID
         session = await db.chatsession.find_unique(where={"id": session_id})
         if not session or not session.userId:
             logger.warning(f"Session {session_id} not found or missing userId")
             return
         
-        # Check if we should create an episodic memory for this turn
-        # Count existing episodic memories for this session
         existing_episodes = await db.episodicmemory.count(
             where={"sessionId": session_id}
         )
         
-        # Create episodic memory for every 2-3 turns to enable semantic extraction
-        if existing_episodes < 5:  # Keep building up episodic memories
+        if existing_episodes < 5:
             try:
-                # Get recent messages from this session
                 recent_msgs = await db.chatmessage.find_many(
                     where={"sessionId": session_id},
                     order={"createdAt": "desc"},
-                    take=4  # Last 2 turns (user + assistant)
+                    take=4
                 )
                 
                 if len(recent_msgs) >= 2:
-                    # Create episodic memory from these turns
                     turn_content = "\n".join(
                         f"{msg.role.upper()}: {msg.content}"
                         for msg in reversed(recent_msgs)
@@ -114,7 +105,7 @@ async def extract_and_store_memory(
                             "userId": session.userId,
                             "sessionId": session_id,
                             "title": f"Conversation Turn {existing_episodes + 1}",
-                            "summary": turn_content[:500],  # Truncate if needed
+                            "summary": turn_content[:500],
                             "keyInsights": Json([]),
                             "unresolvedTopics": Json([]),
                             "emotionalState": "engaged",
@@ -130,13 +121,10 @@ async def extract_and_store_memory(
             except Exception as e:
                 logger.debug(f"Could not create episodic memory: {e}")
         
-        # Try to extract semantic memory
         memory_service = SemanticMemoryService()
         should_extract_result = await memory_service.should_extract(clerk_user_id)
         
-        # should_extract returns a bool, not Result
         if should_extract_result:
-            # Extract and save semantic memory
             extract_result = await memory_service.extract_and_save(
                 clerk_user_id=clerk_user_id,
                 user_id=session.userId
@@ -152,69 +140,8 @@ async def extract_and_store_memory(
         logger.error(f"Error extracting memory for session {session_id}: {e}", exc_info=True)
 
 
-@router.post("/chat", response_model=ChatResponse)
-async def chat(
-    request: ChatRequest,
-    http_request: Request,
-    chat_service: ChatService = Depends(get_chat_service),
-    session_service: SessionService = Depends(get_session_service),
-    geoip_service: GeoIPService = Depends(get_geoip_service),
-):
-    """
-    Chat endpoint with RAG support and user profile personalization
-
-    Generates responses using dual LLM with optional context from the SELVE knowledge base
-    and user's personality assessment data.
-    """
-    try:
-        # Extract client IP from request headers
-        client_ip = geoip_service.extract_client_ip(dict(http_request.headers))
-        if not client_ip and http_request.client:
-            client_ip = http_request.client.host
-        
-        # Convert Pydantic messages to dict format
-        conversation_history = None
-        if request.conversation_history:
-            conversation_history = [
-                {"role": msg.role, "content": msg.content}
-                for msg in request.conversation_history
-            ]
-
-        # Generate response with user context and geolocation
-        result = await chat_service.generate_response(
-            message=request.message,
-            conversation_history=conversation_history,
-            use_rag=request.use_rag,
-            clerk_user_id=request.clerk_user_id,
-            selve_scores=request.selve_scores,
-            assessment_url=request.assessment_url,
-            session_id=request.session_id,
-            client_ip=client_ip,
-        )
-
-        # Save messages to session if session_id provided
-        if request.session_id:
-            await session_service.add_message(
-                session_id=request.session_id,
-                role="user",
-                content=request.message
-            )
-            await session_service.add_message(
-                session_id=request.session_id,
-                role="assistant",
-                content=result["response"]
-            )
-
-        return ChatResponse(**result)
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating response: {str(e)}"
-        )
-
-
 @router.post("/chat/stream")
+@limiter.limit("50/hour")  # Per-IP limit: 50 chat requests per hour
 async def chat_stream(
     request: ChatRequest,
     http_request: Request,
@@ -223,19 +150,61 @@ async def chat_stream(
     session_service: SessionService = Depends(get_session_service),
     compression_service: CompressionService = Depends(get_compression_service),
     geoip_service: GeoIPService = Depends(get_geoip_service),
+    security_service: SecurityService = Depends(get_security_service),
 ):
     """
-    Streaming chat endpoint with RAG support and user profile personalization
+    Streaming chat endpoint with RAG support and user profile personalization.
+    Returns Server-Sent Events (SSE) stream of response chunks.
 
-    Returns Server-Sent Events (SSE) stream of response chunks
+    Rate limit: 50 requests/hour per IP to prevent API credit exhaustion.
     """
     try:
-        # Extract client IP from request headers
+        # Extract client IP
         client_ip = geoip_service.extract_client_ip(dict(http_request.headers))
         if not client_ip and http_request.client:
             client_ip = http_request.client.host
         
-        # Convert Pydantic messages to dict format
+        # Security check: detect prompt injection attempts
+        security_check = await security_service.check_message(
+            message=request.message,
+            user_id=getattr(request, 'user_id', None),
+            clerk_user_id=request.clerk_user_id,
+            session_id=request.session_id,
+            ip_address=client_ip
+        )
+
+        # Handle banned users - return immediately with ban message
+        if not security_check["is_safe"] and security_check["is_banned"]:
+            ban_msg = security_check["message"]
+            ban_expires = security_check.get("ban_expires_at")
+            
+            async def banned_response():
+                # Send ban notification
+                yield f"data: {json.dumps({'type': 'ban', 'message': ban_msg, 'expires_at': ban_expires.isoformat() if ban_expires else None})}\n\n"
+                # Send content so frontend can finalize
+                yield f"data: {json.dumps({'chunk': ban_msg})}\n\n"
+                # Signal completion
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                yield f"data: [DONE]\n\n"
+            
+            return StreamingResponse(
+                banned_response(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+            )
+        
+        # Handle security warnings (not banned, but suspicious)
+        # IMPORTANT: For warnings, we still process the message but notify the user
+        security_warning = None
+        if not security_check["is_safe"] and not security_check["is_banned"]:
+            security_warning = {
+                "type": "warning",
+                "message": security_check["message"],
+                "incident_count": security_check.get("incident_count", 0)
+            }
+            logger.warning(f"Security warning for user {request.clerk_user_id}: {security_check['message']}")
+        
+        # Convert conversation history
         conversation_history = None
         if request.conversation_history:
             conversation_history = [
@@ -243,7 +212,7 @@ async def chat_stream(
                 for msg in request.conversation_history
             ]
 
-        # Save user message to session immediately if session_id provided
+        # Save user message to session
         if request.session_id:
             try:
                 await session_service.add_message(
@@ -252,71 +221,75 @@ async def chat_stream(
                     content=request.message
                 )
             except Exception as e:
-                print(f"⚠️ Error saving user message to session: {e}")
+                logger.warning(f"Error saving user message to session: {e}")
 
-        # Containers to store response and compression state
+        # Response container for background task
         class ResponseContainer:
             def __init__(self):
                 self.content = ""
                 self.compression_needed = False
                 self.total_tokens = None
-                self.session_data = None
 
         response_container = ResponseContainer()
 
-        # Generate streaming response with status events
         async def generate():
-            async for event in chat_service.chat_stream(
-                message=request.message,
-                conversation_history=conversation_history,
-                clerk_user_id=request.clerk_user_id,
-                session_id=request.session_id,
-                client_ip=client_ip,
-                emit_status=True,
-            ):
-                # Check if this is a status event (dict) or text chunk (str)
-                if isinstance(event, dict):
-                    # Status event for thinking UI
-                    yield f"data: {json.dumps(event)}\n\n"
-                else:
-                    # Text chunk from LLM
-                    response_container.content += event
-                    yield f"data: {json.dumps({'chunk': event})}\n\n"
+            # Send security warning first if there is one
+            if security_warning:
+                yield f"data: {json.dumps(security_warning)}\n\n"
+            
+            # Stream the actual response
+            try:
+                async for event in chat_service.chat_stream(
+                    message=request.message,
+                    conversation_history=conversation_history,
+                    clerk_user_id=request.clerk_user_id,
+                    session_id=request.session_id,
+                    client_ip=client_ip,
+                    emit_status=True,
+                ):
+                    if isinstance(event, dict):
+                        yield f"data: {json.dumps(event)}\n\n"
+                    else:
+                        response_container.content += event
+                        yield f"data: {json.dumps({'chunk': event})}\n\n"
+            except Exception as e:
+                logger.error(f"Error in chat stream: {e}")
+                error_msg = "I apologize, but I encountered an issue processing your request. Please try again."
+                response_container.content = error_msg
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                yield f"data: {json.dumps({'chunk': error_msg})}\n\n"
 
-            # Check if compression is needed (informational only; compression handled in agent post-process)
+            # Check compression status
             if request.session_id:
                 try:
                     response_container.compression_needed = await compression_service.should_trigger_compression(request.session_id)
-                    # Get session to retrieve total tokens and user ID
                     from app.db import db
                     session = await db.chatsession.find_unique(where={"id": request.session_id})
                     if session:
                         response_container.total_tokens = session.totalTokens
-                        response_container.session_data = {
-                            "userId": session.userId,
-                            "clerkUserId": session.clerkUserId
-                        }
                 except Exception as e:
-                    print(f"⚠️ Error checking compression: {e}")
+                    logger.warning(f"Error checking compression: {e}")
 
-            # Send completion signal with metadata
+            # Send completion signal
             yield f"data: {json.dumps({'done': True, 'compression_needed': response_container.compression_needed, 'total_tokens': response_container.total_tokens})}\n\n"
+            yield f"data: [DONE]\n\n"
 
-        # Background task to save assistant message after stream completes
+        # Background task to save assistant message
         async def save_assistant_message():
-            # Wait a moment to ensure streaming is complete
             await asyncio.sleep(0.5)
             if request.session_id and response_container.content:
-                await session_service.add_message(
-                    session_id=request.session_id,
-                    role="assistant",
-                    content=response_container.content
-                )
+                try:
+                    await session_service.add_message(
+                        session_id=request.session_id,
+                        role="assistant",
+                        content=response_container.content
+                    )
+                except Exception as e:
+                    logger.error(f"Error saving assistant message: {e}")
 
         # Register background tasks
         if request.session_id:
             background_tasks.add_task(save_assistant_message)
-            # Also trigger memory extraction
             enable_memory = os.getenv("ENABLE_SEMANTIC_MEMORY", "true").lower() == "true"
             background_tasks.add_task(
                 extract_and_store_memory,
@@ -336,8 +309,8 @@ async def chat_stream(
 
     except Exception as e:
         import traceback
-        print(f"❌ Chat stream error: {e}")
-        print(traceback.format_exc())
+        logger.error(f"Chat stream error: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating streaming response: {str(e)}"
@@ -346,13 +319,8 @@ async def chat_stream(
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(rag_service: RAGService = Depends(get_rag_service)):
-    """
-    Health check endpoint
-
-    Verifies that all services (Qdrant, OpenAI) are operational.
-    """
+    """Health check endpoint"""
     try:
-        # Check Qdrant connection
         collection_info = rag_service.qdrant.get_collection(rag_service.collection_name)
         qdrant_connected = True
         collection_points = collection_info.points_count
@@ -360,7 +328,6 @@ async def health_check(rag_service: RAGService = Depends(get_rag_service)):
         qdrant_connected = False
         collection_points = 0
 
-    # Check OpenAI API key
     openai_configured = bool(os.getenv("OPENAI_API_KEY"))
 
     return HealthResponse(
@@ -380,11 +347,7 @@ async def get_context(
     top_k: int = 3,
     rag_service: RAGService = Depends(get_rag_service)
 ):
-    """
-    Test endpoint to retrieve RAG context without generating a response
-
-    Useful for debugging and testing the retrieval system.
-    """
+    """Test endpoint to retrieve RAG context without generating a response"""
     try:
         context_info = rag_service.get_context_for_query(query, top_k)
         return context_info

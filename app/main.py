@@ -8,8 +8,11 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Load environment variables from repo-local .env before importing app modules
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,6 +24,15 @@ from app.db import connect_db, disconnect_db
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Configure rate limiter
+# Uses Redis if available (configured via REDIS_URL env var), falls back to in-memory
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["100/hour"],  # Default per-IP limit
+    storage_uri=os.getenv("REDIS_URL", "memory://"),
+    strategy="fixed-window"
+)
 
 # ASCII Art Banner
 SELVE_BANNER = """
@@ -73,6 +85,10 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware (configure based on your frontend domain)
 app.add_middleware(

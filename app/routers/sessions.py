@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 from app.services.session_service import SessionService
-from app.services.chat_service import ChatService
+from app.services.title_service import TitleService
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 logger = logging.getLogger(__name__)
@@ -61,9 +61,9 @@ def get_session_service():
     return SessionService()
 
 
-def get_chat_service():
-    """Get ChatService instance"""
-    return ChatService()
+def get_title_service():
+    """Get TitleService instance"""
+    return TitleService()
 
 
 @router.post("/", response_model=SessionDetailResponse)
@@ -240,7 +240,7 @@ async def archive_session(
 async def generate_and_update_title(
     session_id: str,
     request: GenerateTitleRequest,
-    chat_service: ChatService = Depends(get_chat_service),
+    title_service: TitleService = Depends(get_title_service),
     session_service: SessionService = Depends(get_session_service)
 ):
     """
@@ -270,7 +270,7 @@ async def generate_and_update_title(
 
         async def _generate_and_save_title():
             try:
-                title = await chat_service.generate_conversation_title(
+                title = await title_service.generate_title(
                     request.message,
                     request.assistant_response,
                 )
@@ -281,11 +281,9 @@ async def generate_and_update_title(
             except Exception as e:
                 logger.warning(f"Background title generation failed for {session_id}: {e}")
 
-        # Fire and forget using chat_service background task tracking so the user can keep chatting
-        chat_service._schedule_background_task(
-            _generate_and_save_title(),
-            name=f"generate_title_{session_id}"
-        )
+        # Fire and forget - run in background
+        import asyncio
+        asyncio.create_task(_generate_and_save_title())
 
         # Return current session state immediately (with placeholder if applied)
         return SessionDetailResponse(**session)

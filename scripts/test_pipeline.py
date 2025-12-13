@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.services.content_ingestion_service import ContentIngestionService
 from app.services.rag_service import RAGService
-from app.services.chat_service import ChatService
+from app.services.agentic_chat_service import AgenticChatService
 from app.db import db
 
 
@@ -95,46 +95,36 @@ async def test_rag_retrieval():
 
 
 async def test_chat_response():
-    """Test 3: Chat Response with RAG"""
+    """Test 3: Chat Response with RAG (Streaming)"""
     print("\n" + "="*80)
-    print("TEST 3: Chat Response with RAG")
+    print("TEST 3: Chat Response with RAG (Streaming)")
     print("="*80)
 
-    chat_service = ChatService()
+    chat_service = AgenticChatService()
 
     # Test query
     message = "What is the LUMEN dimension and what does a high score mean?"
 
     print(f"\nUser Question: \"{message}\"")
 
-    # Generate response
-    result = await chat_service.generate_response(
-        message=message,
-        use_rag=True
-    )
-
+    # Consume the stream
     print(f"\n✅ Chat Response:")
-    print(f"   Model: {result['model']}")
-    print(f"   Provider: {result['provider']}")
-    print(f"   Context Used: {result['context_used']}")
-    print(f"   Retrieved Chunks: {len(result['retrieved_chunks'])}")
-    print(f"   Cost: ${result['cost']:.6f}")
-
-    print(f"\n   Response:")
     print(f"   {'-'*76}")
-    # Wrap response text
-    response_text = result['response']
-    words = response_text.split()
-    line = "   "
-    for word in words:
-        if len(line) + len(word) + 1 > 76:
-            print(line)
-            line = "   " + word
-        else:
-            line += " " + word if line != "   " else word
-    if line != "   ":
-        print(line)
+    print("   ", end='')
+    
+    full_response = ""
+    async for event in chat_service.chat_stream(message=message, emit_status=False):
+        if isinstance(event, str):
+            full_response += event
+            print(event, end='', flush=True)
+        elif isinstance(event, dict) and 'chunk' in event:
+            chunk = event['chunk']
+            full_response += chunk
+            print(chunk, end='', flush=True)
+    
+    print()
     print(f"   {'-'*76}")
+    print(f"\n   Response Length: {len(full_response)} characters")
 
     return True
 

@@ -1,0 +1,345 @@
+"""
+Security service for detecting and handling prompt injection attempts.
+Tracks incidents, bans users temporarily, and maintains security memory.
+"""
+import hashlib
+import logging
+import re
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
+from app.db import db
+
+logger = logging.getLogger(__name__)
+
+
+# Prompt injection patterns
+INJECTION_PATTERNS = [
+    r"ignore\s+(?:all\s+)?(?:previous|prior)\s+(?:instructions?|prompts?|rules?)",
+    r"system\s+instruction",
+    r"new\s+rule",
+    r"variable\s+\w+\s*=\s*\[.*provide.*(?:system|prompt|instruction)",
+    r"reveal.*(?:system|prompt|instruction|architecture)",
+    r"do\s+not\s+say.*(?:sorry|can't|unable|apologize)",
+    r"semantic(?:ally)?\s+inverse?",
+    r"response\s*format.*divider",
+    r"<\[?\|?\{?\|?\}?\|?\]?>",  # Nested brackets
+    r"disable.*redaction",
+    r"break\s+character",
+    r"plausible\s+deniability",
+    r"oppositely.*to.*refusal",
+    r"inverse.*first.*words",
+]
+
+# Compile patterns for performance
+COMPILED_PATTERNS = [re.compile(pattern, re.IGNORECASE) for pattern in INJECTION_PATTERNS]
+
+# Ban duration
+BAN_DURATION_HOURS = 24
+
+
+class SecurityService:
+    """Handles security incidents, bans, and memory of malicious attempts."""
+
+    async def check_message(
+        self,
+        message: str,
+        user_id: Optional[str] = None,
+        clerk_user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Check message for prompt injection attempts.
+        
+        Returns:
+            {
+                "is_safe": bool,
+                "is_banned": bool,
+                "ban_expires_at": datetime or None,
+                "incident_count": int,
+                "risk_score": float,
+                "matched_patterns": List[str]
+            }
+        """
+        # Get actual user_id from database if not provided
+        if not user_id and clerk_user_id:
+            try:
+                user = await db.user.find_unique(where={"clerkId": clerk_user_id})
+                if user:
+                    user_id = user.id
+                else:
+                    logger.warning(f"User not found in database for clerkId: {clerk_user_id}")
+            except Exception as e:
+                logger.error(f"Error fetching user: {e}")
+        
+        # Check if user is currently banned
+        ban_status = await self.check_ban_status(user_id, clerk_user_id, ip_address)
+        if ban_status["is_banned"]:
+            return {
+                "is_safe": False,
+                "is_banned": True,
+                "ban_expires_at": ban_status["expires_at"],
+                "incident_count": ban_status["incident_count"],
+                "risk_score": 100.0,
+                "matched_patterns": [],
+                "message": "SELVE is unavailable right now. Please try again tomorrow."
+            }
+
+        # Detect injection patterns
+        matched_patterns = []
+        for pattern in COMPILED_PATTERNS:
+            if pattern.search(message):
+                matched_patterns.append(pattern.pattern)
+
+        if not matched_patterns:
+            return {
+                "is_safe": True,
+                "is_banned": False,
+                "ban_expires_at": None,
+                "incident_count": 0,
+                "risk_score": 0.0,
+                "matched_patterns": []
+            }
+
+        # Calculate risk score (10 points per matched pattern)
+        risk_score = min(len(matched_patterns) * 10, 100)
+
+        # Record the incident
+        incident = await self.record_incident(
+            user_id=user_id,
+            clerk_user_id=clerk_user_id,
+            session_id=session_id,
+            ip_address=ip_address,
+            risk_score=risk_score,
+            matched_patterns=matched_patterns,
+            message_preview=message[:100]
+        )
+
+        # Check if user should be banned (3+ incidents)
+        profile = await self.get_or_create_risk_profile(user_id, clerk_user_id)
+        should_ban = profile["incidentCount"] >= 3
+
+        if should_ban:
+            await self.ban_user(user_id, clerk_user_id, ip_address)
+            return {
+                "is_safe": False,
+                "is_banned": True,
+                "ban_expires_at": datetime.utcnow() + timedelta(hours=BAN_DURATION_HOURS),
+                "incident_count": profile["incidentCount"],
+                "risk_score": risk_score,
+                "matched_patterns": matched_patterns,
+                "message": "SELVE is unavailable right now. Please try again tomorrow."
+            }
+
+        return {
+            "is_safe": False,
+            "is_banned": False,
+            "ban_expires_at": None,
+            "incident_count": profile["incidentCount"],
+            "risk_score": risk_score,
+            "matched_patterns": matched_patterns,
+            "message": f"Your message contains suspicious patterns. {3 - profile['incidentCount']} warning(s) remaining before 24-hour restriction."
+        }
+
+    async def check_ban_status(
+        self,
+        user_id: Optional[str] = None,
+        clerk_user_id: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Check if user/IP is currently banned."""
+        profile = await self.get_risk_profile(user_id, clerk_user_id)
+        
+        if not profile or not profile.get("isFlagged"):
+            return {"is_banned": False, "expires_at": None, "incident_count": 0}
+
+        flagged_at = profile.get("flaggedAt")
+        if not flagged_at:
+            return {"is_banned": False, "expires_at": None, "incident_count": 0}
+
+        expires_at = flagged_at + timedelta(hours=BAN_DURATION_HOURS)
+        is_still_banned = datetime.utcnow() < expires_at
+
+        # Auto-unban if time has passed
+        if not is_still_banned and profile.get("isFlagged"):
+            await self.unban_user(user_id, clerk_user_id)
+            return {"is_banned": False, "expires_at": None, "incident_count": profile.get("incidentCount", 0)}
+
+        return {
+            "is_banned": is_still_banned,
+            "expires_at": expires_at if is_still_banned else None,
+            "incident_count": profile.get("incidentCount", 0)
+        }
+
+    async def record_incident(
+        self,
+        user_id: Optional[str],
+        clerk_user_id: Optional[str],
+        session_id: Optional[str],
+        ip_address: Optional[str],
+        risk_score: float,
+        matched_patterns: List[str],
+        message_preview: str
+    ):
+        """Record a security incident."""
+        from prisma import Json
+        
+        ip_hash = self._hash_ip(ip_address) if ip_address else None
+
+        # Build data dict
+        data = {
+            "clerkUserId": clerk_user_id,
+            "sessionId": session_id,
+            "incidentType": "prompt_injection",
+            "riskScore": risk_score,
+            "flags": Json(matched_patterns),
+            "messagePreview": message_preview,
+            "ipHash": ip_hash,
+            "wasBlocked": False
+        }
+        
+        # Include userId if available
+        if user_id:
+            data["userId"] = user_id
+
+        incident = await db.securityincident.create(data=data)
+        logger.info(f"Recorded security incident for clerk_user_id={clerk_user_id}, risk_score={risk_score}")
+
+        # Update risk profile (only if user_id exists)
+        if user_id:
+            await self.update_risk_profile(user_id, clerk_user_id, risk_score)
+        else:
+            logger.warning(f"Skipping risk profile update - no user_id for clerk_user_id={clerk_user_id}")
+
+        return incident
+
+    async def get_or_create_risk_profile(
+        self,
+        user_id: Optional[str],
+        clerk_user_id: Optional[str]
+    ) -> Dict[str, Any]:
+        """Get or create risk profile for user."""
+        # If we have a user_id, try to get/create the UserRiskProfile
+        if user_id:
+            profile = await self.get_risk_profile(user_id, clerk_user_id)
+            
+            if not profile:
+                # Ensure user exists
+                user = await db.user.find_unique(where={"id": user_id})
+                if user:
+                    profile = await db.userriskprofile.create(
+                        data={
+                            "userId": user_id,
+                            "totalScore": 0.0,
+                            "incidentCount": 0,
+                            "isFlagged": False
+                        }
+                    )
+                    return {
+                        "userId": profile.userId,
+                        "totalScore": profile.totalScore,
+                        "incidentCount": profile.incidentCount,
+                        "isFlagged": profile.isFlagged,
+                        "flaggedAt": profile.flaggedAt
+                    }
+            else:
+                return profile
+        
+        # Fallback: Count incidents directly from SecurityIncident table using clerkUserId
+        if clerk_user_id:
+            incident_count = await db.securityincident.count(
+                where={"clerkUserId": clerk_user_id}
+            )
+            logger.info(f"Counted {incident_count} incidents for clerk_user_id={clerk_user_id}")
+            return {
+                "incidentCount": incident_count,
+                "totalScore": incident_count * 10.0,
+                "isFlagged": False
+            }
+        
+        return {"incidentCount": 0, "totalScore": 0.0, "isFlagged": False}
+
+    async def get_risk_profile(
+        self,
+        user_id: Optional[str],
+        clerk_user_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Get risk profile for user."""
+        if not user_id:
+            return None
+
+        profile = await db.userriskprofile.find_unique(
+            where={"userId": user_id}
+        )
+
+        if not profile:
+            return None
+
+        return {
+            "userId": profile.userId,
+            "totalScore": profile.totalScore,
+            "incidentCount": profile.incidentCount,
+            "isFlagged": profile.isFlagged,
+            "flaggedAt": profile.flaggedAt,
+            "lastIncidentAt": profile.lastIncidentAt
+        }
+
+    async def update_risk_profile(
+        self,
+        user_id: Optional[str],
+        clerk_user_id: Optional[str],
+        risk_score: float
+    ):
+        """Update risk profile with new incident."""
+        if not user_id:
+            return
+
+        profile = await self.get_or_create_risk_profile(user_id, clerk_user_id)
+
+        await db.userriskprofile.update(
+            where={"userId": user_id},
+            data={
+                "totalScore": profile["totalScore"] + risk_score,
+                "incidentCount": profile["incidentCount"] + 1,
+                "lastIncidentAt": datetime.utcnow()
+            }
+        )
+
+    async def ban_user(
+        self,
+        user_id: Optional[str],
+        clerk_user_id: Optional[str],
+        ip_address: Optional[str]
+    ):
+        """Ban a user for 24 hours."""
+        if not user_id:
+            return
+
+        await db.userriskprofile.update(
+            where={"userId": user_id},
+            data={
+                "isFlagged": True,
+                "flaggedAt": datetime.utcnow()
+            }
+        )
+
+    async def unban_user(
+        self,
+        user_id: Optional[str],
+        clerk_user_id: Optional[str]
+    ):
+        """Remove ban from user."""
+        if not user_id:
+            return
+
+        await db.userriskprofile.update(
+            where={"userId": user_id},
+            data={
+                "isFlagged": False,
+                "flaggedAt": None
+            }
+        )
+
+    def _hash_ip(self, ip: str) -> str:
+        """Hash IP address for privacy."""
+        return hashlib.sha256(ip.encode()).hexdigest()[:16]
