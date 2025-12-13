@@ -361,7 +361,8 @@ class AgenticChatService:
                     response_chunks = []
                     sources = []
                     user_intent = "unknown"
-                    
+                    stream_metadata = None  # Capture metadata for Langfuse
+
                     async for item in self.thinking_engine.think_and_respond(
                         message=message,
                         user_state=user_state,
@@ -370,6 +371,12 @@ class AgenticChatService:
                         emit_status=emit_status,
                     ):
                         if isinstance(item, dict):
+                            # Check if this is metadata from LLM service
+                            if item.get("__metadata__"):
+                                stream_metadata = item
+                                self.logger.info(f"📊 Captured stream metadata: {stream_metadata}")
+                                continue  # Don't yield metadata to client
+
                             # Status event from thinking engine
                             # Map thinking phases to agent phases
                             phase_map = {
@@ -381,7 +388,7 @@ class AgenticChatService:
                                 "complete": AgentPhase.COMPLETE,
                                 "error": AgentPhase.ERROR,
                             }
-                            
+
                             thinking_phase = item.get("phase", "")
                             if thinking_phase in phase_map:
                                 yield AgentStatus(
@@ -389,18 +396,18 @@ class AgenticChatService:
                                     message=item.get("message", ""),
                                     details=item.get("details", {}),
                                 ).to_dict()
-                            
+
                             # Capture metadata
                             if item.get("details", {}).get("sources"):
                                 sources = item["details"]["sources"]
                             if item.get("details", {}).get("intent"):
                                 user_intent = item["details"]["intent"]
-                        
+
                         elif isinstance(item, str):
                             # Response chunk
                             response_chunks.append(item)
                             yield item
-                    
+
                     full_response = "".join(response_chunks)
                 
                 else:
@@ -457,14 +464,33 @@ class AgenticChatService:
                     )
                 
                 # Update Langfuse generation with final output
-                generation.update(
-                    output=full_response,
-                    metadata={
+                update_params = {
+                    "output": full_response,
+                    "metadata": {
                         "intent": user_intent,
                         "sources_count": len(sources),
                         "security_blocked": False,
                     }
-                )
+                }
+
+                # Add usage and cost if metadata was captured from LLM
+                if stream_metadata:
+                    self.logger.info(f"✅ Stream metadata captured: {stream_metadata}")
+                    update_params["model"] = stream_metadata.get("model")
+                    update_params["usage_details"] = {
+                        "input_tokens": stream_metadata["usage"].get("input_tokens", 0),
+                        "output_tokens": stream_metadata["usage"].get("output_tokens", 0),
+                        "total_tokens": stream_metadata["usage"].get("total_tokens", 0),
+                    }
+                    update_params["metadata"]["provider"] = stream_metadata.get("provider")
+                    if stream_metadata.get("cost") is not None:
+                        update_params["cost_details"] = {
+                            "total": stream_metadata.get("cost")
+                        }
+                else:
+                    self.logger.warning("⚠️ No stream metadata captured - cost and usage will be missing")
+
+                generation.update(**update_params)
 
                 # =================================================================
                 # COMPLETE

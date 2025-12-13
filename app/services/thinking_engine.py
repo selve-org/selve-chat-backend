@@ -689,8 +689,8 @@ class ThinkingEngine:
                     full_response_chunks.append(chunk)
                     yield chunk
                 elif isinstance(chunk, dict) and chunk.get("__metadata__"):
-                    # Capture metadata
-                    pass
+                    # Pass metadata upstream to AgenticChatService for Langfuse logging
+                    yield chunk
             
             full_response = "".join(full_response_chunks)
             step.complete({"response_length": len(full_response)})
