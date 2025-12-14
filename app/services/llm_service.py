@@ -300,7 +300,8 @@ class LLMService:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 system=system_msg or "",
-                messages=conv
+                messages=conv,
+                timeout=self.retry_config.timeout  # ROB-3: Add timeout
             )
         
         response = self._with_retry(make_request, f"Anthropic ({model})")
@@ -347,6 +348,8 @@ class LLMService:
             request_params["extra_body"] = self._get_gpt5_extra_body()
         
         def make_request():
+            # ROB-3: Add timeout to prevent hanging requests
+            request_params["timeout"] = self.retry_config.timeout
             return self.openai.chat.completions.create(**request_params)
         
         response = self._with_retry(make_request, f"OpenAI ({model})")
@@ -505,6 +508,8 @@ class LLMService:
         if self._is_gpt5_model(model):
             request_params["extra_body"] = self._get_gpt5_extra_body()
         
+        # ROB-3: Add timeout to prevent hanging streams
+        request_params["timeout"] = self.retry_config.timeout
         stream = self.openai.chat.completions.create(**request_params)
         
         # Track usage from stream
