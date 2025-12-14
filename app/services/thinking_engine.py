@@ -399,15 +399,29 @@ class IntentClassifier:
             r"(found|came across|saw|read|heard).{0,40}(about|that|saying)",
             r"\b(what|who|where|when|how).{0,50}(is|are|was|were).{0,50}(company|organization|person|technology|product)\b",
             r"(latest|recent|new|current).{0,30}(news|trends|updates|research|studies)\b",
+            r"\b(reddit|twitter|facebook|instagram|social\s+media)\b",  # Social media references
+            r"(what.*saying|discussions?|talking about|opinions?).{0,30}(reddit|online|internet|people)",  # Discussion queries
+            r"https?://",  # URLs in message
+            r"\b(mbti|big\s+five|enneagram|disc)\b",  # External frameworks trigger research to transform
+            r"(analyze|explain|tell\s+me\s+about).{0,30}(this|that|the).{0,30}(video|post|article|link)",  # Content analysis requests
         ]
-        if any(re.search(pattern, message_lower) for pattern in external_patterns):
+
+        # Check if message contains external references
+        has_external_ref = any(re.search(pattern, message_lower) for pattern in external_patterns)
+
+        if has_external_ref:
+            # Determine if it's personality-related or truly off-topic
+            personality_keywords = ["personality", "mbti", "type", "trait", "introvert", "extrovert",
+                                   "psychology", "behavior", "temperament", "character"]
+            is_personality_related = any(kw in message_lower for kw in personality_keywords)
+
             return AnalysisResult(
-                intent=UserIntent.OFF_TOPIC,
+                intent=UserIntent.EXPLORING_PERSONALITY if is_personality_related else UserIntent.OFF_TOPIC,
                 confidence=0.7,
-                needs_rag=False,
-                needs_personality_context=False,
-                needs_web_research=True,
-                key_topics=["research"],
+                needs_rag=True if is_personality_related else False,
+                needs_personality_context=is_personality_related,
+                needs_web_research=True,  # Always enable web research for external refs
+                key_topics=["research", "external content"],
                 referenced_dimensions=[],
                 is_follow_up=is_follow_up,
                 emotional_tone=emotional_tone,
