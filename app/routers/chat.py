@@ -143,8 +143,8 @@ async def extract_and_store_memory(
 @router.post("/chat/stream")
 @limiter.limit("50/hour")  # Per-IP limit: 50 chat requests per hour
 async def chat_stream(
-    request: ChatRequest,
-    http_request: Request,
+    chat_request: ChatRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     chat_service: AgenticChatService = Depends(get_agent_chat_service),
     session_service: SessionService = Depends(get_session_service),
@@ -160,16 +160,16 @@ async def chat_stream(
     """
     try:
         # Extract client IP
-        client_ip = geoip_service.extract_client_ip(dict(http_request.headers))
-        if not client_ip and http_request.client:
-            client_ip = http_request.client.host
+        client_ip = geoip_service.extract_client_ip(dict(request.headers))
+        if not client_ip and request.client:
+            client_ip = request.client.host
         
         # Security check: detect prompt injection attempts
         security_check = await security_service.check_message(
-            message=request.message,
-            user_id=getattr(request, 'user_id', None),
-            clerk_user_id=request.clerk_user_id,
-            session_id=request.session_id,
+            message=chat_request.message,
+            user_id=getattr(chat_request, 'user_id', None),
+            clerk_user_id=chat_request.clerk_user_id,
+            session_id=chat_request.session_id,
             ip_address=client_ip
         )
 
@@ -202,23 +202,23 @@ async def chat_stream(
                 "message": security_check["message"],
                 "incident_count": security_check.get("incident_count", 0)
             }
-            logger.warning(f"Security warning for user {request.clerk_user_id}: {security_check['message']}")
+            logger.warning(f"Security warning for user {chat_request.clerk_user_id}: {security_check['message']}")
         
         # Convert conversation history
         conversation_history = None
-        if request.conversation_history:
+        if chat_request.conversation_history:
             conversation_history = [
                 {"role": msg.role, "content": msg.content}
-                for msg in request.conversation_history
+                for msg in chat_request.conversation_history
             ]
 
         # Save user message to session
-        if request.session_id:
+        if chat_request.session_id:
             try:
                 await session_service.add_message(
-                    session_id=request.session_id,
+                    session_id=chat_request.session_id,
                     role="user",
-                    content=request.message
+                    content=chat_request.message
                 )
             except Exception as e:
                 logger.warning(f"Error saving user message to session: {e}")
@@ -250,10 +250,10 @@ async def chat_stream(
                 # Stream the actual response
                 stream_started = True
                 async for event in chat_service.chat_stream(
-                    message=request.message,
+                    message=chat_request.message,
                     conversation_history=conversation_history,
-                    clerk_user_id=request.clerk_user_id,
-                    session_id=request.session_id,
+                    clerk_user_id=chat_request.clerk_user_id,
+                    session_id=chat_request.session_id,
                     client_ip=client_ip,
                     emit_status=True,
                 ):
@@ -265,11 +265,11 @@ async def chat_stream(
 
             except asyncio.CancelledError:
                 # Client disconnected - log and cleanup gracefully
-                logger.info(f"Client disconnected from stream (session: {request.session_id})")
+                logger.info(f"Client disconnected from stream (session: {chat_request.session_id})")
                 raise  # Re-raise to properly cancel the task
 
             except Exception as e:
-                logger.error(f"Error in chat stream (session: {request.session_id}): {e}", exc_info=True)
+                logger.error(f"Error in chat stream (session: {chat_request.session_id}): {e}", exc_info=True)
                 error_msg = "I apologize, but I encountered an issue processing your request. Please try again."
                 response_container.content = error_msg if not response_container.content else response_container.content
 
@@ -285,11 +285,11 @@ async def chat_stream(
                 # Always attempt to send completion signal and check compression
                 try:
                     # Check compression status
-                    if request.session_id:
+                    if chat_request.session_id:
                         try:
-                            response_container.compression_needed = await compression_service.should_trigger_compression(request.session_id)
+                            response_container.compression_needed = await compression_service.should_trigger_compression(chat_request.session_id)
                             from app.db import db
-                            session = await db.chatsession.find_unique(where={"id": request.session_id})
+                            session = await db.chatsession.find_unique(where={"id": chat_request.session_id})
                             if session:
                                 response_container.total_tokens = session.totalTokens
                         except Exception as e:
@@ -300,15 +300,15 @@ async def chat_stream(
                         yield f"data: {json.dumps({'done': True, 'compression_needed': response_container.compression_needed, 'total_tokens': response_container.total_tokens})}\n\n"
                         yield f"data: [DONE]\n\n"
                 except Exception as cleanup_error:
-                    logger.error(f"Error in stream cleanup (session: {request.session_id}): {cleanup_error}")
+                    logger.error(f"Error in stream cleanup (session: {chat_request.session_id}): {cleanup_error}")
 
         # Background task to save assistant message
         async def save_assistant_message():
             await asyncio.sleep(0.5)
-            if request.session_id and response_container.content:
+            if chat_request.session_id and response_container.content:
                 try:
                     await session_service.add_message(
-                        session_id=request.session_id,
+                        session_id=chat_request.session_id,
                         role="assistant",
                         content=response_container.content
                     )
@@ -316,13 +316,13 @@ async def chat_stream(
                     logger.error(f"Error saving assistant message: {e}")
 
         # Register background tasks
-        if request.session_id:
+        if chat_request.session_id:
             background_tasks.add_task(save_assistant_message)
             enable_memory = os.getenv("ENABLE_SEMANTIC_MEMORY", "true").lower() == "true"
             background_tasks.add_task(
                 extract_and_store_memory,
-                clerk_user_id=request.clerk_user_id,
-                session_id=request.session_id,
+                clerk_user_id=chat_request.clerk_user_id,
+                session_id=chat_request.session_id,
                 enable_memory=enable_memory
             )
 
