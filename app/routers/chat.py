@@ -233,12 +233,22 @@ async def chat_stream(
         response_container = ResponseContainer()
 
         async def generate():
-            # Send security warning first if there is one
-            if security_warning:
-                yield f"data: {json.dumps(security_warning)}\n\n"
-            
-            # Stream the actual response
+            """
+            Stream generator with robust error handling (ROB-1)
+
+            Improvements:
+            - Proper try/except/finally for cleanup
+            - Client disconnect detection
+            - Detailed error logging
+            """
+            stream_started = False
             try:
+                # Send security warning first if there is one
+                if security_warning:
+                    yield f"data: {json.dumps(security_warning)}\n\n"
+
+                # Stream the actual response
+                stream_started = True
                 async for event in chat_service.chat_stream(
                     message=request.message,
                     conversation_history=conversation_history,
@@ -252,27 +262,45 @@ async def chat_stream(
                     else:
                         response_container.content += event
                         yield f"data: {json.dumps({'chunk': event})}\n\n"
+
+            except asyncio.CancelledError:
+                # Client disconnected - log and cleanup gracefully
+                logger.info(f"Client disconnected from stream (session: {request.session_id})")
+                raise  # Re-raise to properly cancel the task
+
             except Exception as e:
-                logger.error(f"Error in chat stream: {e}")
+                logger.error(f"Error in chat stream (session: {request.session_id}): {e}", exc_info=True)
                 error_msg = "I apologize, but I encountered an issue processing your request. Please try again."
-                response_container.content = error_msg
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-                yield f"data: {json.dumps({'chunk': error_msg})}\n\n"
+                response_container.content = error_msg if not response_container.content else response_container.content
 
-            # Check compression status
-            if request.session_id:
+                # Only send error messages if stream hasn't started or if we can safely send
                 try:
-                    response_container.compression_needed = await compression_service.should_trigger_compression(request.session_id)
-                    from app.db import db
-                    session = await db.chatsession.find_unique(where={"id": request.session_id})
-                    if session:
-                        response_container.total_tokens = session.totalTokens
-                except Exception as e:
-                    logger.warning(f"Error checking compression: {e}")
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while processing your request'})}\n\n"
+                    if not response_container.content:
+                        yield f"data: {json.dumps({'chunk': error_msg})}\n\n"
+                except Exception as yield_error:
+                    logger.error(f"Failed to send error message to client: {yield_error}")
 
-            # Send completion signal
-            yield f"data: {json.dumps({'done': True, 'compression_needed': response_container.compression_needed, 'total_tokens': response_container.total_tokens})}\n\n"
-            yield f"data: [DONE]\n\n"
+            finally:
+                # Always attempt to send completion signal and check compression
+                try:
+                    # Check compression status
+                    if request.session_id:
+                        try:
+                            response_container.compression_needed = await compression_service.should_trigger_compression(request.session_id)
+                            from app.db import db
+                            session = await db.chatsession.find_unique(where={"id": request.session_id})
+                            if session:
+                                response_container.total_tokens = session.totalTokens
+                        except Exception as e:
+                            logger.warning(f"Error checking compression in finally block: {e}")
+
+                    # Send completion signal
+                    if stream_started:
+                        yield f"data: {json.dumps({'done': True, 'compression_needed': response_container.compression_needed, 'total_tokens': response_container.total_tokens})}\n\n"
+                        yield f"data: [DONE]\n\n"
+                except Exception as cleanup_error:
+                    logger.error(f"Error in stream cleanup (session: {request.session_id}): {cleanup_error}")
 
         # Background task to save assistant message
         async def save_assistant_message():
