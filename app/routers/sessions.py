@@ -55,6 +55,15 @@ class UpdateSessionTitleRequest(BaseModel):
     title: str
 
 
+class SearchResult(BaseModel):
+    """Search result with session and matching content"""
+    id: str
+    title: str
+    createdAt: str
+    lastMessageAt: str
+    matchingContent: Optional[str] = None
+
+
 # Dependency injection
 def get_session_service():
     """Get SessionService instance"""
@@ -291,7 +300,113 @@ async def generate_and_update_title(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error generating title for session {session_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating title: {str(e)}"
         )
+
+
+@router.get("/search/{clerk_user_id}", response_model=List[SearchResult])
+async def search_sessions(
+    clerk_user_id: str,
+    q: str,
+    limit: int = 20,
+):
+    """
+    Search through user's sessions using PostgreSQL full-text search
+    
+    Args:
+        clerk_user_id: Clerk user ID
+        q: Search query
+        limit: Maximum number of results
+        
+    Returns:
+        List of sessions with matching content snippets
+    """
+    try:
+        if not q or len(q.strip()) == 0:
+            return []
+            
+        from app.db import get_db
+        
+        async with get_db() as db:
+            search_query = q.strip()
+            search_pattern = f"%{search_query}%"
+            
+            # Search sessions by title and message content
+            query = """
+            SELECT 
+                s.id,
+                s.title,
+                s."createdAt",
+                s."lastMessageAt"
+            FROM "ChatSession" s
+            WHERE 
+                s."clerkUserId" = $1
+                AND s.status = 'active'
+                AND (
+                    lower(s.title) LIKE lower($2)
+                    OR EXISTS (
+                        SELECT 1 FROM "ChatMessage" m
+                        WHERE m."sessionId" = s.id
+                        AND lower(m.content) LIKE lower($2)
+                        AND m.role IN ('user', 'assistant')
+                        LIMIT 1
+                    )
+                )
+            ORDER BY s."lastMessageAt" DESC
+            LIMIT $3
+            """
+            
+            rows = await db.query_raw(query, clerk_user_id, search_pattern, limit)
+            
+            # Extract matching snippets for each result
+            results = []
+            for row in rows:
+                session_id = row["id"]
+                matching_content = None
+                
+                # Get matching message snippet
+                snippet_query = """
+                SELECT content
+                FROM "ChatMessage"
+                WHERE "sessionId" = $1
+                AND lower(content) LIKE lower($2)
+                AND role IN ('user', 'assistant')
+                ORDER BY "createdAt" DESC
+                LIMIT 1
+                """
+                
+                snippet_rows = await db.query_raw(snippet_query, session_id, search_pattern)
+                if snippet_rows:
+                    content = snippet_rows[0]["content"]
+                    content_lower = content.lower()
+                    match_index = content_lower.find(search_query.lower())
+                    if match_index != -1:
+                        start = max(0, match_index - 50)
+                        end = min(len(content), match_index + len(search_query) + 50)
+                        snippet = content[start:end]
+                        if start > 0:
+                            snippet = "..." + snippet
+                        if end < len(content):
+                            snippet = snippet + "..."
+                        matching_content = snippet
+                
+                results.append(SearchResult(
+                    id=row["id"],
+                    title=row["title"] or "New Conversation",
+                    createdAt=row["createdAt"],
+                    lastMessageAt=row["lastMessageAt"],
+                    matchingContent=matching_content
+                ))
+            
+            return results
+        
+    except Exception as e:
+        logger.error(f"Error searching sessions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error searching sessions"
+        )
+
