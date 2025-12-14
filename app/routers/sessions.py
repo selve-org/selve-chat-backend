@@ -72,7 +72,8 @@ def get_session_service():
 
 def get_title_service():
     """Get TitleService instance"""
-    return TitleService()
+    from app.services.llm_service import LLMService
+    return TitleService(llm_service=LLMService())
 
 
 @router.post("/", response_model=SessionDetailResponse)
