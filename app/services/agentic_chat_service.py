@@ -425,7 +425,7 @@ class AgenticChatService:
                     user_intent = "unknown"
                 
                 # =================================================================
-                # PHASE 5: RESPONSE VALIDATION
+                # PHASE 5: RESPONSE VALIDATION & GUARDRAILS
                 # =================================================================
                 if AgentConfig.RESPONSE_VALIDATION_ENABLED and full_response:
                     if emit_status:
@@ -433,18 +433,54 @@ class AgenticChatService:
                             phase=AgentPhase.VALIDATING,
                             message="Checking response...",
                         ).to_dict()
-                    
+
+                    # Standard response validation (leakage, framework mentions, etc.)
                     validation_result = self.response_validator.validate(
                         full_response,
                         user_has_assessment=user_state.has_assessment if user_state else False,
                     )
-                    
+
                     if validation_result.fixes_applied:
                         self.logger.info(
                             f"Response validation fixes: {validation_result.fixes_applied}"
                         )
-                        # Note: We've already streamed the response, so we can't fix it
-                        # In production, you might want to validate BEFORE streaming
+
+                    # Conversation guardrails (on-brand check, drift detection)
+                    try:
+                        from .conversation_guardrail_service import ConversationGuardrailService
+
+                        guardrail_service = ConversationGuardrailService()
+                        guardrail_result = guardrail_service.check_response(
+                            response=full_response,
+                            conversation_history=conversation_history,
+                            user_has_assessment=user_state.has_assessment if user_state else False,
+                        )
+
+                        if guardrail_result.should_block:
+                            self.logger.error(
+                                f"CRITICAL: Response blocked by guardrails! "
+                                f"Violations: {[v.description for v in guardrail_result.violations]}"
+                            )
+                            # Note: Already streamed, but log for monitoring
+                        elif guardrail_result.should_warn:
+                            self.logger.warning(
+                                f"Response guardrail warnings: "
+                                f"{[v.description for v in guardrail_result.violations]}"
+                            )
+
+                        # Check for conversation drift
+                        if conversation_history and len(conversation_history) >= 5:
+                            is_drifting, drift_reason = guardrail_service.monitor_conversation_drift(
+                                conversation_history + [{"role": "assistant", "content": full_response}]
+                            )
+                            if is_drifting:
+                                self.logger.warning(f"Conversation drift detected: {drift_reason}")
+
+                    except Exception as e:
+                        self.logger.error(f"Guardrail check failed: {e}", exc_info=True)
+
+                    # Note: We've already streamed the response, so we can't fix it
+                    # Violations are logged for monitoring and alerting
                 
                 # =================================================================
                 # PHASE 6: POST-PROCESSING (background)

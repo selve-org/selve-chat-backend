@@ -863,18 +863,33 @@ class ThinkingEngine:
         self,
         message: str,
     ) -> Dict[str, Any]:
-        """Execute web search using crawler tools."""
+        """
+        Execute web search using crawler tools with content transformation.
+
+        Searches Reddit, webpages, and YouTube for personality-related content,
+        then transforms it to SELVE's framework and voice.
+
+        Security:
+        - Domain allowlisting for webpages
+        - Subreddit allowlisting for Reddit
+        - SSRF protection on all URLs
+        - Content validation for personality relevance
+        - Transformation to remove competing frameworks
+        """
         try:
             from app.tools.crawler.tools import YouTubeTool, RedditTool, WebPageTool
             from app.tools.crawler.core import YouTubeRequest, RedditRequest, WebpageRequest
-            
+            from app.services.content_transformation_service import transform_crawled_content
+
             sources = []
             contexts = []
-            
-            # For now, just search Reddit and web pages (no YouTube needed without URLs)
-            # In the future, could extract URLs from message and fetch those
-            
-            # Try Reddit search
+
+            # Extract URLs from message for direct fetching
+            urls = self._extract_urls(message)
+            youtube_urls = [url for url in urls if self._is_youtube_url(url)]
+            web_urls = [url for url in urls if not self._is_youtube_url(url)]
+
+            # 1. Try Reddit search (for general personality insights)
             try:
                 reddit_tool = RedditTool()
                 reddit_request = RedditRequest(
@@ -884,50 +899,159 @@ class ThinkingEngine:
                 )
                 reddit_results = await reddit_tool.search(reddit_request)
                 await reddit_tool.close()
-                
+
                 for result in reddit_results[:3]:  # Limit to top 3
                     if result.is_valid:
-                        sources.append({
-                            "title": result.title,
-                            "source": "reddit",
-                            "url": result.url,
-                        })
-                        contexts.append(f"Reddit - {result.title}: {result.content[:500]}")
-                
+                        # Transform content to SELVE framework
+                        transformation = transform_crawled_content(
+                            content=result.content,
+                            source_url=result.url,
+                            add_citation=True
+                        )
+
+                        if transformation.is_valid:
+                            sources.append({
+                                "title": result.title,
+                                "source": "reddit",
+                                "url": result.url,
+                                "relevance": result.relevance_score,
+                            })
+                            contexts.append(
+                                f"From Reddit discussion: {result.title}\n"
+                                f"{transformation.transformed_content[:600]}"
+                            )
+                            self.logger.info(
+                                f"Transformed Reddit content: {transformation.transformation_notes}"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"Reddit content transformation failed: {transformation.validation_message}"
+                            )
+
             except Exception as e:
-                self.logger.warning(f"Reddit search failed: {e}")
-            
-            # Try web search for personality/psychology resources
-            try:
-                webpage_tool = WebPageTool()
-                # Build a simple search query for personality resources
-                search_query = f"personality psychology {message}"
-                
-                # Could fetch specific URLs if mentioned in message
-                # For now, we'd need a proper web search engine integration
-                # This is a placeholder for when that's implemented
-                
-                await webpage_tool.close()
-                
-            except Exception as e:
-                self.logger.warning(f"Web search failed: {e}")
-            
+                self.logger.warning(f"Reddit search failed: {e}", exc_info=True)
+
+            # 2. Try YouTube transcripts (if URLs mentioned in message)
+            if youtube_urls and ThinkingConfig.YOUTUBE_SEARCH_ENABLED:
+                try:
+                    youtube_tool = YouTubeTool()
+
+                    for yt_url in youtube_urls[:2]:  # Limit to 2 videos max
+                        try:
+                            youtube_request = YouTubeRequest(video_url=yt_url)
+                            result = await youtube_tool.get_transcript(youtube_request)
+
+                            if result.is_valid:
+                                # Transform content to SELVE framework
+                                transformation = transform_crawled_content(
+                                    content=result.content,
+                                    source_url=result.url,
+                                    add_citation=True
+                                )
+
+                                if transformation.is_valid:
+                                    sources.append({
+                                        "title": result.title,
+                                        "source": "youtube",
+                                        "url": result.url,
+                                        "relevance": result.relevance_score,
+                                    })
+                                    contexts.append(
+                                        f"From video: {result.title}\n"
+                                        f"{transformation.transformed_content[:800]}"
+                                    )
+                                    self.logger.info(
+                                        f"Transformed YouTube content: {transformation.transformation_notes}"
+                                    )
+                                else:
+                                    self.logger.warning(
+                                        f"YouTube content transformation failed: {transformation.validation_message}"
+                                    )
+                            else:
+                                self.logger.info(f"YouTube content not valid: {result.error}")
+
+                        except Exception as e:
+                            self.logger.warning(f"YouTube fetch failed for {yt_url}: {e}")
+
+                    await youtube_tool.close()
+
+                except Exception as e:
+                    self.logger.warning(f"YouTube tool initialization failed: {e}", exc_info=True)
+
+            # 3. Try webpage fetching (if URLs mentioned in message)
+            if web_urls and ThinkingConfig.WEB_SEARCH_ENABLED:
+                try:
+                    webpage_tool = WebPageTool()
+
+                    for web_url in web_urls[:2]:  # Limit to 2 pages max
+                        try:
+                            webpage_request = WebpageRequest(url=web_url)
+                            result = await webpage_tool.fetch(webpage_request)
+
+                            if result.is_valid:
+                                # Transform content to SELVE framework
+                                transformation = transform_crawled_content(
+                                    content=result.content,
+                                    source_url=result.url,
+                                    add_citation=True
+                                )
+
+                                if transformation.is_valid:
+                                    sources.append({
+                                        "title": result.title,
+                                        "source": "webpage",
+                                        "url": result.url,
+                                        "relevance": result.relevance_score,
+                                    })
+                                    contexts.append(
+                                        f"From {result.title}:\n"
+                                        f"{transformation.transformed_content[:800]}"
+                                    )
+                                    self.logger.info(
+                                        f"Transformed webpage content: {transformation.transformation_notes}"
+                                    )
+                                else:
+                                    self.logger.warning(
+                                        f"Webpage content transformation failed: {transformation.validation_message}"
+                                    )
+                            else:
+                                self.logger.info(f"Webpage content not valid: {result.error}")
+
+                        except Exception as e:
+                            self.logger.warning(f"Webpage fetch failed for {web_url}: {e}")
+
+                    await webpage_tool.close()
+
+                except Exception as e:
+                    self.logger.warning(f"Webpage tool initialization failed: {e}", exc_info=True)
+
+            # Combine all contexts
             if contexts:
-                combined_context = "\n\n".join(contexts)
+                combined_context = "\n\n---\n\n".join(contexts)
                 return {
-                    "context": combined_context[:2000],  # Limit context length
+                    "context": combined_context[:3000],  # Limit total context length
                     "sources": sources,
                 }
-            
+
             return {"context": None, "sources": []}
-        
+
         except asyncio.TimeoutError:
             self.logger.warning("Web search timed out")
             return {"context": None, "sources": []}
-        
+
         except Exception as e:
-            self.logger.error(f"Web search failed: {e}")
+            self.logger.error(f"Web search failed: {e}", exc_info=True)
             return {"context": None, "sources": []}
+
+    def _extract_urls(self, text: str) -> List[str]:
+        """Extract URLs from text."""
+        import re
+        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+        return re.findall(url_pattern, text)
+
+    def _is_youtube_url(self, url: str) -> bool:
+        """Check if URL is a YouTube URL."""
+        return any(domain in url.lower() for domain in ['youtube.com', 'youtu.be', 'm.youtube.com'])
     
     # =========================================================================
     # Prompt Building
