@@ -98,5 +98,29 @@ class HealthResponse(BaseModel):
     """Health check response"""
     status: str
     qdrant_connected: bool
+
+
+class FeedbackRequest(BaseModel):
+    """Request body for feedback endpoint"""
+    message_id: str = Field(..., description="ID of the message to provide feedback for")
+    feedback_type: str = Field(..., description="Type of feedback: 'helpful' or 'not_helpful'")
+    session_id: Optional[str] = Field(default=None, description="Session ID")
+    clerk_user_id: Optional[str] = Field(default=None, description="Clerk user ID")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message_id": "clk123456",
+                "feedback_type": "helpful",
+                "session_id": "session_123",
+                "clerk_user_id": "user_123"
+            }
+        }
+
+
+class FeedbackResponse(BaseModel):
+    """Response from feedback endpoint"""
+    success: bool
+    message: str
     collection_points: int
     services: Dict[str, bool]

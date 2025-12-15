@@ -3,7 +3,7 @@ Chat API Router
 """
 from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
-from app.models.chat import ChatRequest, ChatResponse, HealthResponse
+from app.models.chat import ChatRequest, ChatResponse, HealthResponse, FeedbackRequest, FeedbackResponse
 from app.services.agentic_chat_service import AgenticChatService, get_chat_service as get_agentic_chat_service
 from app.services.rag_service import RAGService
 from app.services.session_service import SessionService
@@ -11,6 +11,7 @@ from app.services.compression_service import CompressionService
 from app.services.geoip_service import GeoIPService
 from app.services.semantic_memory_service import SemanticMemoryService
 from app.services.security_service import SecurityService
+from app.services.langfuse_service import get_langfuse_service, LangfuseService
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 import os
@@ -60,6 +61,11 @@ def get_semantic_memory_service():
 def get_security_service():
     """Get SecurityService instance"""
     return SecurityService()
+
+
+def get_langfuse():
+    """Get LangfuseService instance"""
+    return get_langfuse_service()
 
 
 async def extract_and_store_memory(
@@ -383,4 +389,75 @@ async def get_context(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving context: {str(e)}"
+        )
+
+@router.post("/chat/feedback", response_model=FeedbackResponse)
+async def submit_feedback(
+    feedback: FeedbackRequest,
+    langfuse: LangfuseService = Depends(get_langfuse)
+):
+    """
+    Submit user feedback (helpful/not helpful) for a message.
+    
+    This endpoint tracks user feedback in Langfuse for LLM observability
+    and quality improvement.
+    """
+    try:
+        from app.db import db
+        
+        # Validate feedback type
+        if feedback.feedback_type not in ["helpful", "not_helpful"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="feedback_type must be 'helpful' or 'not_helpful'"
+            )
+        
+        # Find the message
+        message = await db.chatmessage.find_unique(
+            where={"id": feedback.message_id}
+        )
+        
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Message {feedback.message_id} not found"
+            )
+        
+        # Check if message has a Langfuse trace ID
+        if not message.langfuseTraceId:
+            logger.warning(f"Message {feedback.message_id} has no Langfuse trace ID")
+            return FeedbackResponse(
+                success=False,
+                message="Message has no associated Langfuse trace"
+            )
+        
+        # Convert feedback to numeric score (1 for helpful, 0 for not helpful)
+        score_value = 1.0 if feedback.feedback_type == "helpful" else 0.0
+        
+        # Add feedback score to Langfuse
+        langfuse.add_feedback_score(
+            trace_id=message.langfuseTraceId,
+            name="user-feedback",
+            value=score_value,
+            comment=f"User marked as {feedback.feedback_type}",
+            user_id=feedback.clerk_user_id
+        )
+        
+        logger.info(
+            f"Feedback recorded for message {feedback.message_id}: "
+            f"{feedback.feedback_type} (trace: {message.langfuseTraceId})"
+        )
+        
+        return FeedbackResponse(
+            success=True,
+            message=f"Feedback '{feedback.feedback_type}' recorded successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error submitting feedback: {str(e)}"
         )

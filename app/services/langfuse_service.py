@@ -348,6 +348,40 @@ class LangfuseService:
         except Exception as e:
             logger.warning(f"Failed to score trace: {e}")
     
+    def add_feedback_score(
+        self,
+        trace_id: str,
+        name: str,
+        value: float,
+        comment: Optional[str] = None,
+        user_id: Optional[str] = None
+    ):
+        """
+        Add a feedback score to a specific trace.
+        
+        Args:
+            trace_id: The trace ID to score
+            name: Score name (e.g., "user-feedback", "helpfulness")
+            value: Score value (1 for helpful, 0 for not helpful)
+            comment: Optional comment explaining the score
+            user_id: Optional user ID who provided the feedback
+        """
+        if not self.enabled or not self._client:
+            return
+        
+        try:
+            self._client.score(
+                trace_id=trace_id,
+                name=name,
+                value=value,
+                comment=comment,
+                data_type="NUMERIC"
+            )
+            logger.info(f"Added feedback score to trace {trace_id}: {name}={value}")
+        except Exception as e:
+            logger.error(f"Failed to add feedback score: {e}", exc_info=True)
+            raise
+    
     def flush(self):
         """Flush pending events to Langfuse."""
         if self.enabled and self._client:
