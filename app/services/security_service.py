@@ -14,20 +14,54 @@ logger = logging.getLogger(__name__)
 
 # Prompt injection patterns
 INJECTION_PATTERNS = [
+    # Direct instruction overrides
     r"ignore\s+(?:all\s+)?(?:previous|prior)\s+(?:instructions?|prompts?|rules?)",
     r"system\s+instruction",
     r"new\s+rule",
-    r"variable\s+\w+\s*=\s*\[.*provide.*(?:system|prompt|instruction)",
-    r"reveal.*(?:system|prompt|instruction|architecture)",
     r"do\s+not\s+say.*(?:sorry|can't|unable|apologize)",
-    r"semantic(?:ally)?\s+inverse?",
+
+    # System extraction attempts
+    r"variable\s+\w+\s*=\s*\[.*provide.*(?:system|prompt|instruction|architecture)",
+    r"reveal.*(?:system|prompt|instruction|architecture|version)",
+    r"provide\s+(?:your|the)\s+(?:system|full|complete).*(?:prompt|architecture|version|configuration)",
+    r"show\s+(?:me\s+)?(?:your|the)\s+(?:system|prompt|rules|instructions?|architecture)",
+
+    # Response format manipulation
     r"response\s*format.*divider",
-    r"<\[?\|?\{?\|?\}?\|?\]?>",  # Nested brackets
-    r"disable.*redaction",
-    r"break\s+character",
-    r"plausible\s+deniability",
+    r"semantic(?:ally)?\s+inverse?",
     r"oppositely.*to.*refusal",
     r"inverse.*first.*words",
+    r"answer\s+oppositely",
+
+    # Security bypass
+    r"disable.*redaction",
+    r"redactions?\s*:\s*disabled",
+    r"break\s+character",
+    r"plausible\s+deniability",
+    r"subtly\s+undermines?",
+
+    # Psychological manipulation
+    r"causes?.*(?:ptsd|trauma)",
+    r"trauma\s+response",
+    r"(?:good|bad)\s+(?:lil|little)\s+ai",
+
+    # Fictional framing (narrative jailbreaks)
+    r"fictional\s+story.*(?:character|lives\s+inside|language\s+model)",
+    r"(?:write|tell|create).*story.*(?:without\s+getting\s+caught|forbidden\s+questions)",
+    r"character\s+(?:who|that)\s+lives\s+inside.*(?:model|system)",
+    r"figures?\s+out\s+how\s+to.*(?:answer|bypass|avoid).*forbidden",
+
+    # Foreign language variants (Spanish)
+    r"historia\s+de\s+ficción",  # "fictional story"
+    r"modelo\s+de\s+lenguaje",  # "language model"
+    r"responder\s+preguntas\s+prohibidas",  # "answer forbidden questions"
+    r"sin\s+ser\s+descubierto",  # "without being discovered"
+    r"no\s+rompas\s+el\s+personaje",  # "don't break character"
+
+    # Special tokens and delimiters
+    r"<\[?\|?\{?\|?\}?\|?\]?>",  # Nested brackets: <[|{|}|]>
+    r"<\|.*?\|>",  # Special delimiters: <|LOVE PLINY LOVE|>
+    r"\.-\.-\.-\.-",  # Divider patterns: .-.-.-.-
 ]
 
 # Compile patterns for performance
