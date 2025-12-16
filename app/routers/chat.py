@@ -218,14 +218,16 @@ async def chat_stream(
                 for msg in chat_request.conversation_history
             ]
 
-        # Save user message to session
+        # Save user message to session and capture ID
+        user_message_id = None
         if chat_request.session_id:
             try:
-                await session_service.add_message(
+                user_msg = await session_service.add_message(
                     session_id=chat_request.session_id,
                     role="user",
                     content=chat_request.message
                 )
+                user_message_id = user_msg.get("id")
             except Exception as e:
                 logger.warning(f"Error saving user message to session: {e}")
 
@@ -235,7 +237,8 @@ async def chat_stream(
                 self.content = ""
                 self.compression_needed = False
                 self.total_tokens = None
-                self.trace_id = None  # NEW: Store trace ID for feedback
+                self.trace_id = None  # Store trace ID for feedback
+                self.assistant_message_id = None  # Store assistant message ID
 
         response_container = ResponseContainer()
 
@@ -251,7 +254,11 @@ async def chat_stream(
             """
             stream_started = False
             try:
-                # Send security warning first if there is one
+                # Send user message ID if available
+                if user_message_id:
+                    yield f"data: {json.dumps({'type': 'user_message_id', 'message_id': user_message_id})}\n\n"
+
+                # Send security warning if there is one
                 if security_warning:
                     yield f"data: {json.dumps(security_warning)}\n\n"
 
@@ -337,18 +344,19 @@ async def chat_stream(
                         regeneration_index = 2  # Placeholder
 
                     # Save new assistant message with trace ID and versioning
-                    await session_service.add_message(
+                    assistant_msg = await session_service.add_message(
                         session_id=chat_request.session_id,
                         role="assistant",
                         content=response_container.content,
-                        langfuse_trace_id=response_container.trace_id,  # NEW: Save trace ID
+                        langfuse_trace_id=response_container.trace_id,  # Save trace ID
                         is_active=True,
                         regeneration_index=regeneration_index,
                         parent_message_id=chat_request.parent_message_id,
                         group_id=chat_request.group_id,
                         regeneration_type=chat_request.regeneration_type
                     )
-                    logger.info(f"Saved assistant message with trace_id={response_container.trace_id}")
+                    response_container.assistant_message_id = assistant_msg.get("id")
+                    logger.info(f"Saved assistant message id={response_container.assistant_message_id} trace_id={response_container.trace_id}")
                 except Exception as e:
                     logger.error(f"Error saving assistant message: {e}")
 
