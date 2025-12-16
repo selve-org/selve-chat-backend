@@ -358,7 +358,7 @@ class LangfuseService:
     ):
         """
         Add a feedback score to a specific trace.
-        
+
         Args:
             trace_id: The trace ID to score
             name: Score name (e.g., "user-feedback", "helpfulness")
@@ -368,15 +368,20 @@ class LangfuseService:
         """
         if not self.enabled or not self._client:
             return
-        
+
         try:
-            self._client.score(
-                trace_id=trace_id,
+            # Langfuse v3 SDK: Use the score() method from the client
+            from langfuse.client import ScoreBody
+
+            score_body = ScoreBody(
                 name=name,
                 value=value,
+                traceId=trace_id,
                 comment=comment,
-                data_type="NUMERIC"
+                dataType="NUMERIC"
             )
+
+            self._client.score(score_body)
             logger.info(f"Added feedback score to trace {trace_id}: {name}={value}")
         except Exception as e:
             logger.error(f"Failed to add feedback score: {e}", exc_info=True)
