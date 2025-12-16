@@ -243,30 +243,32 @@ class AgenticChatService:
         
         # Setup Langfuse tracing with user identification
         langfuse = get_client()
+        from langfuse import propagate_attributes
 
-        # CRITICAL FIX: Create trace with user_id and session_id
+        # CRITICAL FIX: Use propagate_attributes to set user_id and session_id
         # This ensures users appear in Langfuse dashboard
-        trace = langfuse.trace(
-            name="chat-session",
+        with propagate_attributes(
             user_id=clerk_user_id or "anonymous",
             session_id=session_id,
             metadata={"streaming": "true"},
             tags=["chat", "selve-agent"],
-        )
+        ):
+            # Create generation observation
+            with langfuse.start_as_current_observation(
+                as_type="generation",
+                name="agentic-chat-response",
+                model="selve-agent",
+                input=message,
+            ) as generation:
+                # Capture and yield trace ID for frontend feedback tracking
+                try:
+                    trace_id = langfuse.get_current_trace_id()
+                    if trace_id:
+                        yield {"type": "trace_id", "trace_id": trace_id}
+                except Exception as e:
+                    self.logger.warning(f"Failed to get trace ID: {e}")
 
-        # Create generation observation within the trace
-        generation = trace.generation(
-            name="agentic-chat-response",
-            model="selve-agent",
-            input=message,
-        )
-
-        # Yield trace ID for frontend feedback tracking
-        if hasattr(trace, 'id') and trace.id:
-            yield {"type": "trace_id", "trace_id": trace.id}
-
-        try:
-            try:
+                try:
                 # =================================================================
                 # PHASE 1: SECURITY CHECK
                 # =================================================================
@@ -543,7 +545,6 @@ class AgenticChatService:
                     self.logger.warning("⚠️ No stream metadata captured - cost and usage will be missing")
 
                 generation.update(**update_params)
-                generation.end()
 
                 # =================================================================
                 # COMPLETE
@@ -558,41 +559,35 @@ class AgenticChatService:
                             "duration_ms": (datetime.utcnow() - start_time).total_seconds() * 1000,
                         },
                     ).to_dict()
-            
-            except asyncio.CancelledError:
-                self.logger.info("Chat stream cancelled")
-                generation.update(
-                    level="WARNING",
-                    status_message="Request was cancelled"
-                )
-                generation.end()
-                if emit_status:
-                    yield AgentStatus(
-                        phase=AgentPhase.ERROR,
-                        message="Request cancelled",
-                    ).to_dict()
-                raise
-            
-            except Exception as e:
-                self.logger.error(f"Chat error: {e}", exc_info=True)
-                generation.update(
-                    level="ERROR",
-                    status_message=str(e)
-                )
-                generation.end()
-                if emit_status:
-                    yield AgentStatus(
-                        phase=AgentPhase.ERROR,
-                        message="An error occurred",
-                        details={"error": str(e)},
-                    ).to_dict()
 
-                # Yield fallback response
-                yield "I apologize, but I encountered an issue. Could you try again?"
+                except asyncio.CancelledError:
+                    self.logger.info("Chat stream cancelled")
+                    generation.update(
+                        level="WARNING",
+                        status_message="Request was cancelled"
+                    )
+                    if emit_status:
+                        yield AgentStatus(
+                            phase=AgentPhase.ERROR,
+                            message="Request cancelled",
+                        ).to_dict()
+                    raise
 
-        finally:
-            # Ensure trace is ended
-            trace.end()
+                except Exception as e:
+                    self.logger.error(f"Chat error: {e}", exc_info=True)
+                    generation.update(
+                        level="ERROR",
+                        status_message=str(e)
+                    )
+                    if emit_status:
+                        yield AgentStatus(
+                            phase=AgentPhase.ERROR,
+                            message="An error occurred",
+                            details={"error": str(e)},
+                        ).to_dict()
+
+                    # Yield fallback response
+                    yield "I apologize, but I encountered an issue. Could you try again?"
     
     # =========================================================================
     # Helper Methods
