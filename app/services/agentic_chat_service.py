@@ -208,12 +208,13 @@ class AgenticChatService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         client_ip: Optional[str] = None,
         emit_status: bool = True,
+        regeneration_type: Optional[str] = None,
     ) -> AsyncGenerator[Union[str, Dict[str, Any]], None]:
         """
         Main streaming chat endpoint.
-        
+
         Yields status events and response chunks.
-        
+
         Args:
             message: User's message
             clerk_user_id: Clerk user ID
@@ -221,7 +222,8 @@ class AgenticChatService:
             conversation_history: Previous messages
             client_ip: Client IP for geo/security
             emit_status: Whether to emit status events
-            
+            regeneration_type: "regenerate" | "edit" | None
+
         Yields:
             Status dicts and response text chunks
         """
@@ -239,23 +241,20 @@ class AgenticChatService:
         message = message.strip()[:AgentConfig.MAX_MESSAGE_LENGTH]
         conversation_history = conversation_history or []
         
-        # Setup Langfuse tracing
+        # Setup Langfuse tracing with user identification
         langfuse = get_client()
-        propagate_attributes(
-            user_id=clerk_user_id or "anonymous",
-            session_id=session_id,
-            metadata={"streaming": "true"},
-            tags=["chat", "selve-agent"],
-        )
-        
-        
-        # Wrap entire streaming operation in Langfuse observation context
-        # This is the working pattern from ChatService (lines 838-938)
+
+        # CRITICAL FIX: Set user_id and session_id directly on the trace
+        # This ensures users appear in Langfuse dashboard
         with langfuse.start_as_current_observation(
             as_type="generation",
             name="agentic-chat-response",
-            model="selve-agent",  # Will be updated if we capture model metadata
-            input=message,  # Clean string input - just the user message
+            model="selve-agent",
+            input=message,
+            user_id=clerk_user_id or "anonymous",  # FIX: Pass user_id here
+            session_id=session_id,                 # FIX: Pass session_id here
+            metadata={"streaming": "true"},
+            tags=["chat", "selve-agent"],
         ) as generation:
             try:
                 # =================================================================
@@ -363,11 +362,16 @@ class AgenticChatService:
                     user_intent = "unknown"
                     stream_metadata = None  # Capture metadata for Langfuse
 
+                    # Add regeneration context to system prompt if applicable
+                    system_prompt = self.system_prompt
+                    if regeneration_type == "regenerate":
+                        system_prompt += "\n\nNOTE: The user requested a regeneration of the previous response. Provide a different perspective, alternative approach, or additional insights that weren't covered in the previous response. Vary your communication style and examples."
+
                     async for item in self.thinking_engine.think_and_respond(
                         message=message,
                         user_state=user_state,
                         conversation_history=conversation_history,
-                        system_prompt=self.system_prompt,
+                        system_prompt=system_prompt,
                         emit_status=emit_status,
                     ):
                         if isinstance(item, dict):

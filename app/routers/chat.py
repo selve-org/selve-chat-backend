@@ -235,6 +235,7 @@ async def chat_stream(
                 self.content = ""
                 self.compression_needed = False
                 self.total_tokens = None
+                self.trace_id = None  # NEW: Store trace ID for feedback
 
         response_container = ResponseContainer()
 
@@ -246,12 +247,26 @@ async def chat_stream(
             - Proper try/except/finally for cleanup
             - Client disconnect detection
             - Detailed error logging
+            - Trace ID capture for feedback tracking
             """
             stream_started = False
             try:
                 # Send security warning first if there is one
                 if security_warning:
                     yield f"data: {json.dumps(security_warning)}\n\n"
+
+                # Capture trace ID from Langfuse for feedback tracking
+                try:
+                    from langfuse import get_client
+                    langfuse = get_client()
+                    if hasattr(langfuse, 'get_current_trace_id'):
+                        trace_id = langfuse.get_current_trace_id()
+                        if trace_id:
+                            response_container.trace_id = trace_id
+                            # Send trace ID early in stream
+                            yield f"data: {json.dumps({'type': 'trace_id', 'trace_id': trace_id})}\n\n"
+                except Exception as trace_err:
+                    logger.warning(f"Failed to capture trace ID: {trace_err}")
 
                 # Stream the actual response
                 stream_started = True
@@ -262,6 +277,7 @@ async def chat_stream(
                     session_id=chat_request.session_id,
                     client_ip=client_ip,
                     emit_status=True,
+                    regeneration_type=chat_request.regeneration_type,  # NEW: Pass regeneration context
                 ):
                     if isinstance(event, dict):
                         yield f"data: {json.dumps(event)}\n\n"
@@ -308,16 +324,38 @@ async def chat_stream(
                 except Exception as cleanup_error:
                     logger.error(f"Error in stream cleanup (session: {chat_request.session_id}): {cleanup_error}")
 
-        # Background task to save assistant message
+        # Background task to save assistant message with trace ID and versioning
         async def save_assistant_message():
             await asyncio.sleep(0.5)
             if chat_request.session_id and response_container.content:
                 try:
+                    # Handle regeneration context - mark old messages inactive
+                    if chat_request.regeneration_type and chat_request.group_id:
+                        await session_service.mark_messages_inactive(
+                            session_id=chat_request.session_id,
+                            group_id=chat_request.group_id
+                        )
+                        logger.info(f"Marked old messages inactive for group {chat_request.group_id}")
+
+                    # Determine regeneration index (simple increment for now)
+                    regeneration_index = 1
+                    if chat_request.regeneration_type and chat_request.group_id:
+                        # TODO: Query existing messages to get proper index
+                        regeneration_index = 2  # Placeholder
+
+                    # Save new assistant message with trace ID and versioning
                     await session_service.add_message(
                         session_id=chat_request.session_id,
                         role="assistant",
-                        content=response_container.content
+                        content=response_container.content,
+                        langfuse_trace_id=response_container.trace_id,  # NEW: Save trace ID
+                        is_active=True,
+                        regeneration_index=regeneration_index,
+                        parent_message_id=chat_request.parent_message_id,
+                        group_id=chat_request.group_id,
+                        regeneration_type=chat_request.regeneration_type
                     )
+                    logger.info(f"Saved assistant message with trace_id={response_container.trace_id}")
                 except Exception as e:
                     logger.error(f"Error saving assistant message: {e}")
 
@@ -422,7 +460,18 @@ async def submit_feedback(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Message {feedback.message_id} not found"
             )
-        
+
+        # Security: Verify user owns the session
+        if feedback.clerk_user_id:
+            session = await db.chatsession.find_unique(
+                where={"id": message.sessionId}
+            )
+            if session and session.clerkUserId and session.clerkUserId != feedback.clerk_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cannot submit feedback for other users' messages"
+                )
+
         # Check if message has a Langfuse trace ID
         if not message.langfuseTraceId:
             logger.warning(f"Message {feedback.message_id} has no Langfuse trace ID")

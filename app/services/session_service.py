@@ -46,10 +46,15 @@ class SessionService:
         }
 
     async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get session by ID"""
+        """Get session by ID with active messages only"""
         session = await db.chatsession.find_unique(
             where={"id": session_id},
-            include={"messages": {"orderBy": {"createdAt": "asc"}}}
+            include={
+                "messages": {
+                    "where": {"isActive": True},  # Filter to active messages only
+                    "orderBy": {"createdAt": "asc"}
+                }
+            }
         )
 
         if not session:
@@ -73,6 +78,10 @@ class SessionService:
                     "model": msg.model,
                     "provider": msg.provider,
                     "cost": msg.cost,
+                    "langfuseTraceId": msg.langfuseTraceId,
+                    "isActive": msg.isActive,
+                    "regenerationIndex": msg.regenerationIndex,
+                    "groupId": msg.groupId,
                     "createdAt": msg.createdAt.isoformat()
                 }
                 for msg in session.messages
@@ -115,10 +124,16 @@ class SessionService:
         token_count: int = 0,
         model: Optional[str] = None,
         provider: Optional[str] = None,
-        cost: Optional[float] = None
+        cost: Optional[float] = None,
+        langfuse_trace_id: Optional[str] = None,
+        is_active: bool = True,
+        regeneration_index: int = 1,
+        parent_message_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        regeneration_type: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Add a message to a session
+        Add a message to a session with versioning support
 
         Args:
             session_id: Session ID
@@ -128,6 +143,12 @@ class SessionService:
             model: LLM model used
             provider: LLM provider
             cost: Cost in USD
+            langfuse_trace_id: Langfuse trace ID for feedback tracking
+            is_active: Whether this is the active version
+            regeneration_index: Version number (1, 2, 3...)
+            parent_message_id: ID of parent message if this is a regeneration
+            group_id: Group ID for versioning
+            regeneration_type: "regenerate" | "edit" | None
 
         Returns:
             Message data dict
@@ -140,7 +161,13 @@ class SessionService:
                 "tokenCount": token_count,
                 "model": model,
                 "provider": provider,
-                "cost": cost
+                "cost": cost,
+                "langfuseTraceId": langfuse_trace_id,
+                "isActive": is_active,
+                "regenerationIndex": regeneration_index,
+                "parentMessageId": parent_message_id,
+                "groupId": group_id,
+                "regenerationType": regeneration_type
             }
         )
 
@@ -162,8 +189,48 @@ class SessionService:
             "model": message.model,
             "provider": message.provider,
             "cost": message.cost,
+            "langfuseTraceId": message.langfuseTraceId,
+            "isActive": message.isActive,
+            "regenerationIndex": message.regenerationIndex,
+            "parentMessageId": message.parentMessageId,
+            "groupId": message.groupId,
+            "regenerationType": message.regenerationType,
             "createdAt": message.createdAt.isoformat()
         }
+
+    async def mark_messages_inactive(
+        self,
+        session_id: str,
+        group_id: str,
+        exclude_message_id: Optional[str] = None
+    ) -> int:
+        """
+        Mark all messages in a group as inactive except the specified one.
+
+        Used when creating a new version to deactivate old versions.
+
+        Args:
+            session_id: Session ID
+            group_id: Group ID to filter by
+            exclude_message_id: Message ID to keep active (new version)
+
+        Returns:
+            Number of messages marked inactive
+        """
+        where_clause = {
+            "sessionId": session_id,
+            "groupId": group_id,
+        }
+
+        if exclude_message_id:
+            where_clause["id"] = {"not": exclude_message_id}
+
+        result = await db.chatmessage.update_many(
+            where=where_clause,
+            data={"isActive": False}
+        )
+
+        return result
 
     async def update_session_title(
         self,

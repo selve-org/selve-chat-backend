@@ -39,6 +39,20 @@ class ChatRequest(BaseModel):
         description="URL for the SELVE assessment (used when scores are missing)"
     )
 
+    # Regeneration context fields
+    regeneration_type: Optional[str] = Field(
+        default=None,
+        description="Type of regeneration: 'regenerate' or 'edit'"
+    )
+    parent_message_id: Optional[str] = Field(
+        default=None,
+        description="ID of the parent message being regenerated/edited"
+    )
+    group_id: Optional[str] = Field(
+        default=None,
+        description="Group ID for versioning related messages"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
