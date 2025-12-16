@@ -136,5 +136,5 @@ class FeedbackResponse(BaseModel):
     """Response from feedback endpoint"""
     success: bool
     message: str
-    collection_points: int
-    services: Dict[str, bool]
+    collection_points: int = 0
+    services: Dict[str, bool] = Field(default_factory=dict)
