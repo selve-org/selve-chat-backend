@@ -255,19 +255,6 @@ async def chat_stream(
                 if security_warning:
                     yield f"data: {json.dumps(security_warning)}\n\n"
 
-                # Capture trace ID from Langfuse for feedback tracking
-                try:
-                    from langfuse import get_client
-                    langfuse = get_client()
-                    if hasattr(langfuse, 'get_current_trace_id'):
-                        trace_id = langfuse.get_current_trace_id()
-                        if trace_id:
-                            response_container.trace_id = trace_id
-                            # Send trace ID early in stream
-                            yield f"data: {json.dumps({'type': 'trace_id', 'trace_id': trace_id})}\n\n"
-                except Exception as trace_err:
-                    logger.warning(f"Failed to capture trace ID: {trace_err}")
-
                 # Stream the actual response
                 stream_started = True
                 async for event in chat_service.chat_stream(
@@ -280,6 +267,12 @@ async def chat_stream(
                     regeneration_type=chat_request.regeneration_type,  # NEW: Pass regeneration context
                 ):
                     if isinstance(event, dict):
+                        # Capture trace ID if provided
+                        if event.get('type') == 'trace_id' and event.get('trace_id'):
+                            response_container.trace_id = event['trace_id']
+                            # Forward to frontend
+                            yield f"data: {json.dumps(event)}\n\n"
+                            continue
                         yield f"data: {json.dumps(event)}\n\n"
                     else:
                         response_container.content += event
