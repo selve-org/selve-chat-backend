@@ -253,7 +253,6 @@ class AgenticChatService:
             metadata={"streaming": "true"},
             tags=["chat", "selve-agent"],
         ):
-            # Create generation observation
             with langfuse.start_as_current_observation(
                 as_type="generation",
                 name="agentic-chat-response",
@@ -269,297 +268,297 @@ class AgenticChatService:
                     self.logger.warning(f"Failed to get trace ID: {e}")
 
                 try:
-                # =================================================================
-                # PHASE 1: SECURITY CHECK
-                # =================================================================
-                if AgentConfig.SECURITY_GUARD_ENABLED:
-                    if emit_status:
-                        yield AgentStatus(
-                            phase=AgentPhase.SECURITY_CHECK,
-                            message="Checking security...",
-                        ).to_dict()
-                    
-                    security_result = await asyncio.wait_for(
-                        self.security_guard.analyze(message, clerk_user_id),
-                        timeout=AgentConfig.SECURITY_CHECK_TIMEOUT,
-                    )
-                    
-                    # If blocked, return canned response
-                    if not security_result.is_safe:
-                        self.logger.warning(
-                            f"Security block: {security_result.threat_level.value} "
-                            f"(score: {security_result.risk_score:.2f})"
-                        )
-                        
-                        # Log security incident
-                        if clerk_user_id and AgentConfig.USER_NOTES_ENABLED:
-                            self._schedule_background_task(
-                                self._log_security_incident(
-                                    clerk_user_id=clerk_user_id,
-                                    session_id=session_id,
-                                    result=security_result,
-                                ),
-                                name="log_security_incident",
-                            )
-                        
+                    # =================================================================
+                    # PHASE 1: SECURITY CHECK
+                    # =================================================================
+                    if AgentConfig.SECURITY_GUARD_ENABLED:
                         if emit_status:
                             yield AgentStatus(
-                                phase=AgentPhase.COMPLETE,
-                                message="Response complete",
-                                details={"security_blocked": True},
+                                phase=AgentPhase.SECURITY_CHECK,
+                                message="Checking security...",
                             ).to_dict()
-
-                        # Return safe canned response
-                        canned = "I'm here to help you understand your personality! What would you like to explore?"
-
-                        # Update Langfuse generation for security block
-                        generation.update(
-                            output=canned,
-                            metadata={
-                                "security_blocked": True,
-                                "threat_level": security_result.threat_level.value,
-                                "risk_score": security_result.risk_score,
-                            }
+                    
+                        security_result = await asyncio.wait_for(
+                            self.security_guard.analyze(message, clerk_user_id),
+                            timeout=AgentConfig.SECURITY_CHECK_TIMEOUT,
                         )
-
-                        for char in canned:
-                            yield char
-                        return
-                
-                # =================================================================
-                # PHASE 2: LOAD USER STATE
-                # =================================================================
-                if emit_status:
-                    yield AgentStatus(
-                        phase=AgentPhase.LOADING_USER,
-                        message="Loading your profile...",
-                    ).to_dict()
-                
-                user_state = None
-                if clerk_user_id:
-                    try:
-                        user_state = await asyncio.wait_for(
-                            self.user_state_service.load_user_state(
-                                clerk_user_id=clerk_user_id,
-                                session_id=session_id,
-                            ),
-                            timeout=AgentConfig.USER_STATE_TIMEOUT,
-                        )
-                    except asyncio.TimeoutError:
-                        self.logger.warning("User state load timed out")
-                    except Exception as e:
-                        self.logger.error(f"User state load failed: {e}")
-                
-                # Create minimal user state if not loaded
-                if user_state is None:
-                    from .user_state_service import UserState, AssessmentStatus
-                    user_state = UserState(
-                        user_id="",
-                        clerk_user_id=clerk_user_id or "",
-                        assessment_status=AssessmentStatus.NOT_TAKEN,
-                        has_assessment=False,
-                    )
-    
-                # If no explicit history was provided, fall back to stored session messages
-                # so the agent preserves context across turns.
-                if not conversation_history and getattr(user_state, "current_session_messages", None):
-                    conversation_history = user_state.current_session_messages[-AgentConfig.MAX_HISTORY_MESSAGES:]
-                
-                # =================================================================
-                # PHASE 3-4: THINKING ENGINE (includes analyze, plan, execute, generate)
-                # =================================================================
-                if AgentConfig.THINKING_ENGINE_ENABLED:
-                    response_chunks = []
-                    sources = []
-                    user_intent = "unknown"
-                    stream_metadata = None  # Capture metadata for Langfuse
-
-                    # Add regeneration context to system prompt if applicable
-                    system_prompt = self.system_prompt
-                    if regeneration_type == "regenerate":
-                        system_prompt += "\n\nNOTE: The user requested a regeneration of the previous response. Provide a different perspective, alternative approach, or additional insights that weren't covered in the previous response. Vary your communication style and examples."
-
-                    async for item in self.thinking_engine.think_and_respond(
-                        message=message,
-                        user_state=user_state,
-                        conversation_history=conversation_history,
-                        system_prompt=system_prompt,
-                        emit_status=emit_status,
-                    ):
-                        if isinstance(item, dict):
-                            # Check if this is metadata from LLM service
-                            if item.get("__metadata__"):
-                                stream_metadata = item
-                                self.logger.info(f"📊 Captured stream metadata: {stream_metadata}")
-                                continue  # Don't yield metadata to client
-
-                            # Status event from thinking engine
-                            # Map thinking phases to agent phases
-                            phase_map = {
-                                "analyzing": AgentPhase.ANALYZING,
-                                "planning": AgentPhase.PLANNING,
-                                "retrieving": AgentPhase.RETRIEVING,
-                                "personalizing": AgentPhase.PERSONALIZING,
-                                "generating": AgentPhase.GENERATING,
-                                "complete": AgentPhase.COMPLETE,
-                                "error": AgentPhase.ERROR,
-                            }
-
-                            thinking_phase = item.get("phase", "")
-                            if thinking_phase in phase_map:
+                    
+                        # If blocked, return canned response
+                        if not security_result.is_safe:
+                            self.logger.warning(
+                                f"Security block: {security_result.threat_level.value} "
+                                f"(score: {security_result.risk_score:.2f})"
+                            )
+                        
+                            # Log security incident
+                            if clerk_user_id and AgentConfig.USER_NOTES_ENABLED:
+                                self._schedule_background_task(
+                                    self._log_security_incident(
+                                        clerk_user_id=clerk_user_id,
+                                        session_id=session_id,
+                                        result=security_result,
+                                    ),
+                                    name="log_security_incident",
+                                )
+                        
+                            if emit_status:
                                 yield AgentStatus(
-                                    phase=phase_map[thinking_phase],
-                                    message=item.get("message", ""),
-                                    details=item.get("details", {}),
+                                    phase=AgentPhase.COMPLETE,
+                                    message="Response complete",
+                                    details={"security_blocked": True},
                                 ).to_dict()
 
-                            # Capture metadata
-                            if item.get("details", {}).get("sources"):
-                                sources = item["details"]["sources"]
-                            if item.get("details", {}).get("intent"):
-                                user_intent = item["details"]["intent"]
+                            # Return safe canned response
+                            canned = "I'm here to help you understand your personality! What would you like to explore?"
 
-                        elif isinstance(item, str):
-                            # Response chunk
-                            response_chunks.append(item)
-                            yield item
+                            # Update Langfuse generation for security block
+                            generation.update(
+                                output=canned,
+                                metadata={
+                                    "security_blocked": True,
+                                    "threat_level": security_result.threat_level.value,
+                                    "risk_score": security_result.risk_score,
+                                }
+                            )
 
-                    full_response = "".join(response_chunks)
+                            for char in canned:
+                                yield char
+                            return
                 
-                else:
-                    # Fallback: Simple LLM call (non-agentic)
-                    full_response = await self._simple_llm_call(
-                        message=message,
-                        user_state=user_state,
-                        conversation_history=conversation_history,
-                    )
-                    
-                    for char in full_response:
-                        yield char
-                    
-                    sources = []
-                    user_intent = "unknown"
-                
-                # =================================================================
-                # PHASE 5: RESPONSE VALIDATION & GUARDRAILS
-                # =================================================================
-                if AgentConfig.RESPONSE_VALIDATION_ENABLED and full_response:
+                    # =================================================================
+                    # PHASE 2: LOAD USER STATE
+                    # =================================================================
                     if emit_status:
                         yield AgentStatus(
-                            phase=AgentPhase.VALIDATING,
-                            message="Checking response...",
+                            phase=AgentPhase.LOADING_USER,
+                            message="Loading your profile...",
                         ).to_dict()
-
-                    # Standard response validation (leakage, framework mentions, etc.)
-                    validation_result = self.response_validator.validate(
-                        full_response,
-                        user_has_assessment=user_state.has_assessment if user_state else False,
-                    )
-
-                    if validation_result.fixes_applied:
-                        self.logger.info(
-                            f"Response validation fixes: {validation_result.fixes_applied}"
+                
+                    user_state = None
+                    if clerk_user_id:
+                        try:
+                            user_state = await asyncio.wait_for(
+                                self.user_state_service.load_user_state(
+                                    clerk_user_id=clerk_user_id,
+                                    session_id=session_id,
+                                ),
+                                timeout=AgentConfig.USER_STATE_TIMEOUT,
+                            )
+                        except asyncio.TimeoutError:
+                            self.logger.warning("User state load timed out")
+                        except Exception as e:
+                            self.logger.error(f"User state load failed: {e}")
+                
+                    # Create minimal user state if not loaded
+                    if user_state is None:
+                        from .user_state_service import UserState, AssessmentStatus
+                        user_state = UserState(
+                            user_id="",
+                            clerk_user_id=clerk_user_id or "",
+                            assessment_status=AssessmentStatus.NOT_TAKEN,
+                            has_assessment=False,
                         )
+    
+                    # If no explicit history was provided, fall back to stored session messages
+                    # so the agent preserves context across turns.
+                    if not conversation_history and getattr(user_state, "current_session_messages", None):
+                        conversation_history = user_state.current_session_messages[-AgentConfig.MAX_HISTORY_MESSAGES:]
+                
+                    # =================================================================
+                    # PHASE 3-4: THINKING ENGINE (includes analyze, plan, execute, generate)
+                    # =================================================================
+                    if AgentConfig.THINKING_ENGINE_ENABLED:
+                        response_chunks = []
+                        sources = []
+                        user_intent = "unknown"
+                        stream_metadata = None  # Capture metadata for Langfuse
 
-                    # Conversation guardrails (on-brand check, drift detection)
-                    try:
-                        from .conversation_guardrail_service import ConversationGuardrailService
+                        # Add regeneration context to system prompt if applicable
+                        system_prompt = self.system_prompt
+                        if regeneration_type == "regenerate":
+                            system_prompt += "\n\nNOTE: The user requested a regeneration of the previous response. Provide a different perspective, alternative approach, or additional insights that weren't covered in the previous response. Vary your communication style and examples."
 
-                        guardrail_service = ConversationGuardrailService()
-                        guardrail_result = guardrail_service.check_response(
-                            response=full_response,
+                        async for item in self.thinking_engine.think_and_respond(
+                            message=message,
+                            user_state=user_state,
                             conversation_history=conversation_history,
+                            system_prompt=system_prompt,
+                            emit_status=emit_status,
+                        ):
+                            if isinstance(item, dict):
+                                # Check if this is metadata from LLM service
+                                if item.get("__metadata__"):
+                                    stream_metadata = item
+                                    self.logger.info(f"📊 Captured stream metadata: {stream_metadata}")
+                                    continue  # Don't yield metadata to client
+
+                                # Status event from thinking engine
+                                # Map thinking phases to agent phases
+                                phase_map = {
+                                    "analyzing": AgentPhase.ANALYZING,
+                                    "planning": AgentPhase.PLANNING,
+                                    "retrieving": AgentPhase.RETRIEVING,
+                                    "personalizing": AgentPhase.PERSONALIZING,
+                                    "generating": AgentPhase.GENERATING,
+                                    "complete": AgentPhase.COMPLETE,
+                                    "error": AgentPhase.ERROR,
+                                }
+
+                                thinking_phase = item.get("phase", "")
+                                if thinking_phase in phase_map:
+                                    yield AgentStatus(
+                                        phase=phase_map[thinking_phase],
+                                        message=item.get("message", ""),
+                                        details=item.get("details", {}),
+                                    ).to_dict()
+
+                                # Capture metadata
+                                if item.get("details", {}).get("sources"):
+                                    sources = item["details"]["sources"]
+                                if item.get("details", {}).get("intent"):
+                                    user_intent = item["details"]["intent"]
+
+                            elif isinstance(item, str):
+                                # Response chunk
+                                response_chunks.append(item)
+                                yield item
+
+                        full_response = "".join(response_chunks)
+                
+                    else:
+                        # Fallback: Simple LLM call (non-agentic)
+                        full_response = await self._simple_llm_call(
+                            message=message,
+                            user_state=user_state,
+                            conversation_history=conversation_history,
+                        )
+                    
+                        for char in full_response:
+                            yield char
+                    
+                        sources = []
+                        user_intent = "unknown"
+                
+                    # =================================================================
+                    # PHASE 5: RESPONSE VALIDATION & GUARDRAILS
+                    # =================================================================
+                    if AgentConfig.RESPONSE_VALIDATION_ENABLED and full_response:
+                        if emit_status:
+                            yield AgentStatus(
+                                phase=AgentPhase.VALIDATING,
+                                message="Checking response...",
+                            ).to_dict()
+
+                        # Standard response validation (leakage, framework mentions, etc.)
+                        validation_result = self.response_validator.validate(
+                            full_response,
                             user_has_assessment=user_state.has_assessment if user_state else False,
                         )
 
-                        if guardrail_result.should_block:
-                            self.logger.error(
-                                f"CRITICAL: Response blocked by guardrails! "
-                                f"Violations: {[v.description for v in guardrail_result.violations]}"
-                            )
-                            # Note: Already streamed, but log for monitoring
-                        elif guardrail_result.should_warn:
-                            self.logger.warning(
-                                f"Response guardrail warnings: "
-                                f"{[v.description for v in guardrail_result.violations]}"
+                        if validation_result.fixes_applied:
+                            self.logger.info(
+                                f"Response validation fixes: {validation_result.fixes_applied}"
                             )
 
-                        # Check for conversation drift
-                        if conversation_history and len(conversation_history) >= 5:
-                            is_drifting, drift_reason = guardrail_service.monitor_conversation_drift(
-                                conversation_history + [{"role": "assistant", "content": full_response}]
+                        # Conversation guardrails (on-brand check, drift detection)
+                        try:
+                            from .conversation_guardrail_service import ConversationGuardrailService
+
+                            guardrail_service = ConversationGuardrailService()
+                            guardrail_result = guardrail_service.check_response(
+                                response=full_response,
+                                conversation_history=conversation_history,
+                                user_has_assessment=user_state.has_assessment if user_state else False,
                             )
-                            if is_drifting:
-                                self.logger.warning(f"Conversation drift detected: {drift_reason}")
 
-                    except Exception as e:
-                        self.logger.error(f"Guardrail check failed: {e}", exc_info=True)
+                            if guardrail_result.should_block:
+                                self.logger.error(
+                                    f"CRITICAL: Response blocked by guardrails! "
+                                    f"Violations: {[v.description for v in guardrail_result.violations]}"
+                                )
+                                # Note: Already streamed, but log for monitoring
+                            elif guardrail_result.should_warn:
+                                self.logger.warning(
+                                    f"Response guardrail warnings: "
+                                    f"{[v.description for v in guardrail_result.violations]}"
+                                )
 
-                    # Note: We've already streamed the response, so we can't fix it
-                    # Violations are logged for monitoring and alerting
+                            # Check for conversation drift
+                            if conversation_history and len(conversation_history) >= 5:
+                                is_drifting, drift_reason = guardrail_service.monitor_conversation_drift(
+                                    conversation_history + [{"role": "assistant", "content": full_response}]
+                                )
+                                if is_drifting:
+                                    self.logger.warning(f"Conversation drift detected: {drift_reason}")
+
+                        except Exception as e:
+                            self.logger.error(f"Guardrail check failed: {e}", exc_info=True)
+
+                        # Note: We've already streamed the response, so we can't fix it
+                        # Violations are logged for monitoring and alerting
                 
-                # =================================================================
-                # PHASE 6: POST-PROCESSING (background)
-                # =================================================================
-                if clerk_user_id:
-                    # Schedule background tasks
-                    self._schedule_background_task(
-                        self._post_process(
-                            clerk_user_id=clerk_user_id,
-                            session_id=session_id,
-                            user_state=user_state,
-                            message=message,
-                            response=full_response,
-                            user_intent=user_intent,
-                        ),
-                        name="post_process",
-                    )
+                    # =================================================================
+                    # PHASE 6: POST-PROCESSING (background)
+                    # =================================================================
+                    if clerk_user_id:
+                        # Schedule background tasks
+                        self._schedule_background_task(
+                            self._post_process(
+                                clerk_user_id=clerk_user_id,
+                                session_id=session_id,
+                                user_state=user_state,
+                                message=message,
+                                response=full_response,
+                                user_intent=user_intent,
+                            ),
+                            name="post_process",
+                        )
                 
-                # Update Langfuse generation with final output
-                update_params = {
-                    "output": full_response,
-                    "metadata": {
-                        "intent": user_intent,
-                        "sources_count": len(sources),
-                        "security_blocked": False,
-                    }
-                }
-
-                # Add usage and cost if metadata was captured from LLM
-                if stream_metadata:
-                    self.logger.info(f"✅ Stream metadata captured: {stream_metadata}")
-                    update_params["model"] = stream_metadata.get("model")
-                    update_params["usage_details"] = {
-                        "input_tokens": stream_metadata["usage"].get("input_tokens", 0),
-                        "output_tokens": stream_metadata["usage"].get("output_tokens", 0),
-                        "total_tokens": stream_metadata["usage"].get("total_tokens", 0),
-                    }
-                    update_params["metadata"]["provider"] = stream_metadata.get("provider")
-                    if stream_metadata.get("cost") is not None:
-                        update_params["cost_details"] = {
-                            "total": stream_metadata.get("cost"),
-                            "input": stream_metadata.get("input_cost"),
-                            "output": stream_metadata.get("output_cost")
-                        }
-                else:
-                    self.logger.warning("⚠️ No stream metadata captured - cost and usage will be missing")
-
-                generation.update(**update_params)
-
-                # =================================================================
-                # COMPLETE
-                # =================================================================
-                if emit_status:
-                    yield AgentStatus(
-                        phase=AgentPhase.COMPLETE,
-                        message="Response complete",
-                        details={
-                            "sources": sources,
+                    # Update Langfuse generation with final output
+                    update_params = {
+                        "output": full_response,
+                        "metadata": {
                             "intent": user_intent,
-                            "duration_ms": (datetime.utcnow() - start_time).total_seconds() * 1000,
-                        },
-                    ).to_dict()
+                            "sources_count": len(sources),
+                            "security_blocked": False,
+                        }
+                    }
 
+                    # Add usage and cost if metadata was captured from LLM
+                    if stream_metadata:
+                        self.logger.info(f"✅ Stream metadata captured: {stream_metadata}")
+                        update_params["model"] = stream_metadata.get("model")
+                        update_params["usage_details"] = {
+                            "input_tokens": stream_metadata["usage"].get("input_tokens", 0),
+                            "output_tokens": stream_metadata["usage"].get("output_tokens", 0),
+                            "total_tokens": stream_metadata["usage"].get("total_tokens", 0),
+                        }
+                        update_params["metadata"]["provider"] = stream_metadata.get("provider")
+                        if stream_metadata.get("cost") is not None:
+                            update_params["cost_details"] = {
+                                "total": stream_metadata.get("cost"),
+                                "input": stream_metadata.get("input_cost"),
+                                "output": stream_metadata.get("output_cost")
+                            }
+                    else:
+                        self.logger.warning("⚠️ No stream metadata captured - cost and usage will be missing")
+
+                    generation.update(**update_params)
+
+                    # =================================================================
+                    # COMPLETE
+                    # =================================================================
+                    if emit_status:
+                        yield AgentStatus(
+                            phase=AgentPhase.COMPLETE,
+                            message="Response complete",
+                            details={
+                                "sources": sources,
+                                "intent": user_intent,
+                                "duration_ms": (datetime.utcnow() - start_time).total_seconds() * 1000,
+                            },
+                        ).to_dict()
+            
                 except asyncio.CancelledError:
                     self.logger.info("Chat stream cancelled")
                     generation.update(
@@ -572,7 +571,7 @@ class AgenticChatService:
                             message="Request cancelled",
                         ).to_dict()
                     raise
-
+            
                 except Exception as e:
                     self.logger.error(f"Chat error: {e}", exc_info=True)
                     generation.update(
