@@ -36,5 +36,8 @@ redis==5.0.1
 beautifulsoup4==4.12.3
 lxml==4.9.4
 
+# Error Tracking & Monitoring
+sentry-sdk[fastapi]==1.40.0
+
 # Optional: For development
 pytest==7.4.4
