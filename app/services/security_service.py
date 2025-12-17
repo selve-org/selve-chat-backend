@@ -154,7 +154,15 @@ class SecurityService:
         should_ban = profile["incidentCount"] >= 3
 
         if should_ban:
-            await self.ban_user(user_id, clerk_user_id, ip_address)
+            # Ban user and track in Langfuse with full context
+            await self.ban_user(
+                user_id=user_id,
+                clerk_user_id=clerk_user_id,
+                ip_address=ip_address,
+                message=message,  # The message that triggered the ban
+                session_id=session_id,
+                message_id=None  # Message ID not available at this point
+            )
             return {
                 "is_safe": False,
                 "is_banned": True,
@@ -343,28 +351,90 @@ class SecurityService:
         self,
         user_id: Optional[str],
         clerk_user_id: Optional[str],
-        ip_address: Optional[str]
+        ip_address: Optional[str],
+        message: Optional[str] = None,
+        session_id: Optional[str] = None,
+        message_id: Optional[str] = None
     ):
-        """Ban a user for 24 hours."""
+        """
+        Ban a user for 24 hours and track in Langfuse.
+
+        Args:
+            user_id: Internal user ID
+            clerk_user_id: Clerk authentication ID
+            ip_address: User's IP address
+            message: The message that triggered the ban (for logging)
+            session_id: Session where ban occurred
+            message_id: ID of the message that triggered ban
+        """
         if not user_id:
             return
+
+        ban_time = datetime.utcnow()
+        expires_at = ban_time + timedelta(hours=BAN_DURATION_HOURS)
 
         await db.userriskprofile.update(
             where={"userId": user_id},
             data={
                 "isFlagged": True,
-                "flaggedAt": datetime.utcnow()
+                "flaggedAt": ban_time
             }
         )
+
+        # Comprehensive logging
+        logger.warning(
+            f"🚨 USER BANNED - "
+            f"clerk_user_id={clerk_user_id} "
+            f"user_id={user_id} "
+            f"banned_at={ban_time.isoformat()} "
+            f"expires_at={expires_at.isoformat()} "
+            f"duration=24h "
+            f"session_id={session_id or 'unknown'} "
+            f"message_id={message_id or 'unknown'} "
+            f"ip_hash={self._hash_ip(ip_address) if ip_address else 'unknown'} "
+            f"trigger_message_preview={message[:100] if message else 'N/A'}"
+        )
+
+        # Track ban event in Langfuse for observability
+        try:
+            from app.services.langfuse_service import get_langfuse_service
+            langfuse = get_langfuse_service()
+
+            if langfuse.enabled and langfuse.client:
+                # Create a custom event for the ban
+                with langfuse.client.start_as_current_observation(
+                    as_type="event",
+                    name="user-banned",
+                    input=f"User banned after 3 security incidents",
+                    metadata={
+                        "clerk_user_id": clerk_user_id,
+                        "user_id": user_id,
+                        "banned_at": ban_time.isoformat(),
+                        "expires_at": expires_at.isoformat(),
+                        "duration_hours": BAN_DURATION_HOURS,
+                        "session_id": session_id,
+                        "message_id": message_id,
+                        "ip_hash": self._hash_ip(ip_address) if ip_address else None,
+                        "trigger_message_length": len(message) if message else 0,
+                    },
+                    tags=["security", "ban", "prompt-injection"]
+                ):
+                    pass  # Event is recorded on context exit
+
+                logger.info(f"✓ Ban event tracked in Langfuse for user {clerk_user_id}")
+        except Exception as e:
+            logger.error(f"Failed to track ban in Langfuse: {e}")
 
     async def unban_user(
         self,
         user_id: Optional[str],
         clerk_user_id: Optional[str]
     ):
-        """Remove ban from user."""
+        """Remove ban from user and track in Langfuse."""
         if not user_id:
             return
+
+        unban_time = datetime.utcnow()
 
         await db.userriskprofile.update(
             where={"userId": user_id},
@@ -373,6 +443,37 @@ class SecurityService:
                 "flaggedAt": None
             }
         )
+
+        # Log unban event
+        logger.info(
+            f"✅ USER UNBANNED (24h expired) - "
+            f"clerk_user_id={clerk_user_id} "
+            f"user_id={user_id} "
+            f"unbanned_at={unban_time.isoformat()}"
+        )
+
+        # Track unban in Langfuse
+        try:
+            from app.services.langfuse_service import get_langfuse_service
+            langfuse = get_langfuse_service()
+
+            if langfuse.enabled and langfuse.client:
+                with langfuse.client.start_as_current_observation(
+                    as_type="event",
+                    name="user-unbanned",
+                    input="User automatically unbanned after 24-hour restriction expired",
+                    metadata={
+                        "clerk_user_id": clerk_user_id,
+                        "user_id": user_id,
+                        "unbanned_at": unban_time.isoformat(),
+                    },
+                    tags=["security", "unban", "auto-recovery"]
+                ):
+                    pass
+
+                logger.info(f"✓ Unban event tracked in Langfuse for user {clerk_user_id}")
+        except Exception as e:
+            logger.error(f"Failed to track unban in Langfuse: {e}")
 
     def _hash_ip(self, ip: str) -> str:
         """Hash IP address for privacy."""

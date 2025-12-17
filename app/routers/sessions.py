@@ -272,24 +272,58 @@ async def generate_and_update_title(
                 detail=f"Session not found: {session_id}"
             )
 
+        # Check if title is still a placeholder (initial or from failed generation)
+        current_title = session.get("title")
+        is_placeholder = current_title in (None, "", "New Conversation", "Generating title...")
+
         # Set a lightweight placeholder so the UI can show a loading state (similar to Google's blinking stub)
-        if session.get("title") in (None, "", "New Conversation"):
+        if is_placeholder:
             placeholder_title = "Generating title..."
             await session_service.update_session_title(session_id=session_id, title=placeholder_title)
             session["title"] = placeholder_title
 
         async def _generate_and_save_title():
             try:
+                # Use provided message and response, or fallback to first messages from session
+                user_message = request.message
+                assistant_response = request.assistant_response
+
+                # Fallback: If this is a retry (title still placeholder), get first messages from session
+                if is_placeholder and current_title == "Generating title...":
+                    logger.info(f"Retrying title generation for session {session_id} (previous attempt may have failed)")
+                    try:
+                        # Get session with messages to extract first exchange
+                        session_with_messages = await session_service.get_session(session_id)
+                        messages = session_with_messages.get("messages", [])
+
+                        if len(messages) >= 2:
+                            # Find first user message and first assistant response
+                            first_user = next((m for m in messages if m.get("role") == "user"), None)
+                            first_assistant = next((m for m in messages if m.get("role") == "assistant"), None)
+
+                            if first_user and first_assistant:
+                                user_message = first_user.get("content", user_message)
+                                assistant_response = first_assistant.get("content", assistant_response)
+                                logger.info(f"Using first message exchange from session for title retry")
+                    except Exception as e:
+                        logger.warning(f"Could not extract first messages for title retry: {e}")
+
                 title = await title_service.generate_title(
-                    request.message,
-                    request.assistant_response,
+                    user_message,
+                    assistant_response,
                 )
                 await session_service.update_session_title(
                     session_id=session_id,
                     title=title
                 )
+                logger.info(f"Successfully generated title for session {session_id}: {title}")
             except Exception as e:
                 logger.warning(f"Background title generation failed for {session_id}: {e}")
+                # Reset to default if generation fails
+                await session_service.update_session_title(
+                    session_id=session_id,
+                    title="New Conversation"
+                )
 
         # Fire and forget - run in background
         import asyncio

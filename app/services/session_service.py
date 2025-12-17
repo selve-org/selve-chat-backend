@@ -3,7 +3,10 @@ Session Service - Manages chat sessions and message persistence
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import logging
 from app.db import db
+
+logger = logging.getLogger(__name__)
 
 
 class SessionService:
@@ -244,7 +247,8 @@ class SessionService:
                 data={"title": title}
             )
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to update session title for {session_id}: {e}")
             return False
 
     async def archive_session(self, session_id: str) -> bool:
@@ -255,5 +259,6 @@ class SessionService:
                 data={"status": "archived"}
             )
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to archive session {session_id}: {e}")
             return False
