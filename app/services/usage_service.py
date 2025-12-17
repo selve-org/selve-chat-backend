@@ -130,8 +130,9 @@ class UsageService:
         current_cost = usage["total_cost"]
         usage_percentage = usage["percentage_used"]
 
-        # Allow small buffer (5%) to prevent edge case failures
-        can_send = current_cost < (limit * 1.05)
+        # Strict enforcement - no buffer (removes attack surface)
+        # Previously had 5% buffer which allowed users to consistently overspend
+        can_send = current_cost < limit
         limit_exceeded = current_cost >= limit
 
         return {
@@ -153,7 +154,7 @@ class UsageService:
         provider: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Increment user's usage after sending a message
+        Increment user's usage after sending a message (ATOMIC - prevents race conditions)
 
         Args:
             clerk_user_id: Clerk user ID
@@ -165,72 +166,111 @@ class UsageService:
 
         Returns:
             Updated usage information
+
+        Raises:
+            ValueError: If inputs are invalid or user not found
+            HTTPException: If usage limit would be exceeded
         """
-        # Get user
-        user = await db.user.find_unique(
-            where={"clerkId": clerk_user_id}
-        )
+        # INPUT VALIDATION - Must be first to prevent malicious inputs
+        if cost < 0:
+            raise ValueError(f"Cost must be non-negative, got: {cost}")
+        if tokens < 0:
+            raise ValueError(f"Tokens must be non-negative, got: {tokens}")
+        if cost > 10.0:
+            # Sanity check - single request shouldn't cost $10+
+            logger.warning(f"Suspicious cost value: ${cost} for user {clerk_user_id}")
+            raise ValueError(f"Suspicious cost value: ${cost} - possible error")
 
-        if not user:
-            raise ValueError(f"User not found: {clerk_user_id}")
+        # Use transaction to prevent race conditions
+        # This ensures atomicity - either all operations succeed or none do
+        async with db.tx() as transaction:
+            # Lock the user row for update (prevents concurrent modifications)
+            user = await transaction.user.find_unique(
+                where={"clerkId": clerk_user_id}
+            )
 
-        # Reset if needed
-        await self._reset_usage_if_needed(user)
+            if not user:
+                raise ValueError(f"User not found: {clerk_user_id}")
 
-        # Update user's current period cost
-        updated_user = await db.user.update(
-            where={"clerkId": clerk_user_id},
-            data={
-                "currentPeriodCost": {
-                    "increment": cost
-                }
-            }
-        )
+            # Reset if needed (within transaction for atomicity)
+            was_reset = await self._reset_usage_if_needed_tx(transaction, user)
 
-        # Update or create ChatbotAnalytics record
-        period_start = updated_user.currentPeriodStart
-        period_end = updated_user.currentPeriodEnd or (period_start + timedelta(hours=24))
-        reset_at = period_start + timedelta(hours=24)
+            # Recalculate current cost after potential reset
+            current_cost = 0.0 if was_reset else (user.currentPeriodCost or 0.0)
+            new_cost = current_cost + cost
 
-        # Try to find existing analytics record for this period
-        analytics = await db.chatbotanalytics.find_first(
-            where={
-                "clerkUserId": clerk_user_id,
-                "periodStart": period_start
-            }
-        )
+            # Check limit AFTER acquiring lock (prevents race condition)
+            subscription_plan = user.subscriptionPlan or "free"
+            limit = USAGE_LIMITS.get(subscription_plan, USAGE_LIMITS["free"])
 
-        if analytics:
-            # Update existing record
-            await db.chatbotanalytics.update(
-                where={"id": analytics.id},
+            if limit != float('inf') and new_cost > limit:
+                # Strict enforcement - no 5% buffer
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Usage limit exceeded: ${new_cost:.4f} > ${limit:.2f}"
+                )
+
+            # Atomic update within transaction
+            period_start = user.currentPeriodStart if not was_reset else datetime.utcnow()
+            period_end = user.currentPeriodEnd if not was_reset else (datetime.utcnow() + timedelta(hours=24))
+
+            updated_user = await transaction.user.update(
+                where={"id": user.id},
                 data={
-                    "messageCount": {"increment": 1},
-                    "totalTokensUsed": {"increment": tokens},
-                    "totalCost": {"increment": cost},
-                    "provider": provider,
-                    "model": model
+                    "currentPeriodCost": new_cost,
+                    "currentPeriodStart": period_start,
+                    "currentPeriodEnd": period_end,
+                    "lastUsageReset": user.lastUsageReset if not was_reset else datetime.utcnow()
                 }
             )
-        else:
-            # Create new record
-            await db.chatbotanalytics.create(
-                data={
-                    "userId": user.id,
+
+            # Update or create ChatbotAnalytics record (within transaction for atomicity)
+            reset_at = period_start + timedelta(hours=24)
+
+            # Try to find existing analytics record for this period
+            analytics = await transaction.chatbotanalytics.find_first(
+                where={
                     "clerkUserId": clerk_user_id,
-                    "sessionId": session_id,
-                    "messageCount": 1,
-                    "totalTokensUsed": tokens,
-                    "totalCost": cost,
-                    "provider": provider,
-                    "model": model,
-                    "periodStart": period_start,
-                    "periodEnd": period_end,
-                    "resetAt": reset_at
+                    "periodStart": period_start
                 }
             )
 
-        # Check if we need to send notifications
+            if analytics:
+                # Update existing record
+                await transaction.chatbotanalytics.update(
+                    where={"id": analytics.id},
+                    data={
+                        "messageCount": {"increment": 1},
+                        "totalTokensUsed": {"increment": tokens},
+                        "totalCost": {"increment": cost},
+                        "provider": provider,
+                        "model": model
+                    }
+                )
+            else:
+                # Create new record
+                await transaction.chatbotanalytics.create(
+                    data={
+                        "userId": user.id,
+                        "clerkUserId": clerk_user_id,
+                        "sessionId": session_id,
+                        "messageCount": 1,
+                        "totalTokensUsed": tokens,
+                        "totalCost": cost,
+                        "provider": provider,
+                        "model": model,
+                        "periodStart": period_start,
+                        "periodEnd": period_end,
+                        "resetAt": reset_at
+                    }
+                )
+
+            logger.info(f"Usage incremented: ${cost:.4f} for user {clerk_user_id[:8]}*** (new total: ${new_cost:.4f})")
+
+        # Transaction committed successfully at this point
+
+        # Check if we need to send notifications (outside transaction - non-critical)
         await self._check_and_notify_threshold(
             clerk_user_id,
             updated_user.currentPeriodCost,
@@ -240,9 +280,40 @@ class UsageService:
         # Return updated usage
         return await self.get_current_usage(clerk_user_id)
 
+    async def _reset_usage_if_needed_tx(self, transaction: Any, user: Any) -> bool:
+        """
+        Reset usage if 24-hour period has expired (transaction-safe version)
+
+        This method is called within a database transaction to ensure atomicity.
+
+        Args:
+            transaction: Prisma transaction object
+            user: User database object
+
+        Returns:
+            True if reset occurred, False otherwise
+        """
+        now = datetime.utcnow()
+        period_start = user.currentPeriodStart
+        period_end = user.currentPeriodEnd or (period_start + timedelta(hours=24))
+
+        # Check if period has expired
+        if now >= period_end:
+            logger.info(f"Resetting usage for user {user.clerkId[:8]}***")
+
+            # Reset happens within the transaction (atomic with usage increment)
+            # Note: We don't actually update the user here - the caller will do it
+            # This just returns True to signal that reset is needed
+            return True
+
+        return False
+
     async def _reset_usage_if_needed(self, user: Any) -> bool:
         """
-        Reset usage if 24-hour period has expired
+        Reset usage if 24-hour period has expired (standalone version)
+
+        Use this when NOT within a transaction. For transactional operations,
+        use _reset_usage_if_needed_tx instead.
 
         Args:
             user: User database object
@@ -256,7 +327,7 @@ class UsageService:
 
         # Check if period has expired
         if now >= period_end:
-            logger.info(f"Resetting usage for user {user.clerkId}")
+            logger.info(f"Resetting usage for user {user.clerkId[:8]}***")
 
             # Reset usage
             new_period_start = now

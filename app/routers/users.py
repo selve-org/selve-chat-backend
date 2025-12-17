@@ -1,7 +1,8 @@
 """
 User API Router - Fetch user profiles and SELVE scores
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Header, status
+from typing import Optional
 from app.services.user_profile_service import UserProfileService
 from app.services.usage_service import usage_service
 
@@ -9,18 +10,38 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 @router.get("/{clerk_user_id}/scores")
-async def get_user_scores(clerk_user_id: str):
+async def get_user_scores(
+    clerk_user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+):
     """
     Get user's SELVE personality scores
 
-    Fetches the current assessment result for a user from the database.
+    **Headers Required**:
+    - X-User-ID: Authenticated user's Clerk ID
+
+    **Authorization**: Users can only view their own scores
 
     Args:
         clerk_user_id: Clerk user ID
+        x_user_id: Authenticated user ID from header
 
     Returns:
         User scores and profile information
     """
+    # Verify ownership
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Missing X-User-ID header."
+        )
+
+    if x_user_id != clerk_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access another user's scores"
+        )
+
     service = UserProfileService()
 
     try:
@@ -45,16 +66,38 @@ async def get_user_scores(clerk_user_id: str):
 
 
 @router.get("/{clerk_user_id}")
-async def get_user_details(clerk_user_id: str):
+async def get_user_details(
+    clerk_user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+):
     """
     Get user account details for UI surfaces
 
+    **Headers Required**:
+    - X-User-ID: Authenticated user's Clerk ID
+
+    **Authorization**: Users can only view their own details
+
     Args:
         clerk_user_id: Clerk user ID
+        x_user_id: Authenticated user ID from header
 
     Returns:
         Basic user info and inferred subscription plan
     """
+    # Verify ownership
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Missing X-User-ID header."
+        )
+
+    if x_user_id != clerk_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access another user's details"
+        )
+
     service = UserProfileService()
 
     try:
@@ -78,15 +121,24 @@ async def get_user_details(clerk_user_id: str):
 
 
 @router.get("/{clerk_user_id}/usage")
-async def get_user_usage(clerk_user_id: str):
+async def get_user_usage(
+    clerk_user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+):
     """
     Get user's chatbot usage and limits
+
+    **Headers Required**:
+    - X-User-ID: Authenticated user's Clerk ID
+
+    **Authorization**: Users can only view their own usage
 
     Fetches current usage in the 24-hour period, subscription plan,
     and whether the user can send messages.
 
     Args:
         clerk_user_id: Clerk user ID
+        x_user_id: Authenticated user ID from header
 
     Returns:
         {
@@ -100,9 +152,23 @@ async def get_user_usage(clerk_user_id: str):
                 "limit": float | null
             },
             "can_send_message": bool,
+            "limit_exceeded": bool,
             "time_until_reset": str
         }
     """
+    # Verify ownership
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Missing X-User-ID header."
+        )
+
+    if x_user_id != clerk_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access another user's usage data"
+        )
+
     try:
         # Get current usage
         usage = await usage_service.get_current_usage(clerk_user_id)
