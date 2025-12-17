@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
 from app.db import db
+from app.services.usage_service import usage_service
 
 logger = logging.getLogger(__name__)
 
@@ -175,13 +176,28 @@ class SessionService:
         )
 
         # Update session totals and lastMessageAt
-        await db.chatsession.update(
+        session = await db.chatsession.update(
             where={"id": session_id},
             data={
                 "totalTokens": {"increment": token_count},
                 "lastMessageAt": datetime.utcnow()
             }
         )
+
+        # Increment usage tracking for assistant messages with cost data
+        if role == "assistant" and cost and cost > 0:
+            try:
+                await usage_service.increment_usage(
+                    clerk_user_id=session.clerkUserId,
+                    cost=cost,
+                    tokens=token_count,
+                    session_id=session_id,
+                    model=model,
+                    provider=provider
+                )
+                logger.info(f"Usage incremented: ${cost:.4f} for user {session.clerkUserId}")
+            except Exception as e:
+                logger.error(f"Error incrementing usage: {e}", exc_info=True)
 
         return {
             "id": message.id,

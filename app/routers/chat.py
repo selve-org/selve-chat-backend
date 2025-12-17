@@ -12,6 +12,7 @@ from app.services.geoip_service import GeoIPService
 from app.services.semantic_memory_service import SemanticMemoryService
 from app.services.security_service import SecurityService
 from app.services.langfuse_service import get_langfuse_service, LangfuseService
+from app.services.usage_service import usage_service
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 import os
@@ -209,7 +210,46 @@ async def chat_stream(
                 "incident_count": security_check.get("incident_count", 0)
             }
             logger.warning(f"Security warning for user {chat_request.clerk_user_id}: {security_check['message']}")
-        
+
+        # Usage limit check (free tier only)
+        try:
+            usage = await usage_service.get_current_usage(chat_request.clerk_user_id)
+            subscription_plan = usage["subscription_plan"]
+
+            # Check if user has exceeded their usage limit
+            if subscription_plan == "free":
+                limit_check = await usage_service.check_usage_limit(
+                    chat_request.clerk_user_id,
+                    subscription_plan
+                )
+
+                if not limit_check["can_send"]:
+                    # User has exceeded their limit
+                    time_until_reset = usage["time_until_reset"]
+                    limit_msg = (
+                        f"You've reached your daily usage limit. "
+                        f"Your limit will reset in {time_until_reset}. "
+                        f"Upgrade to Pro for unlimited chatbot conversations!"
+                    )
+
+                    async def limit_exceeded_response():
+                        # Send limit exceeded notification
+                        yield f"data: {json.dumps({'type': 'usage_limit', 'message': limit_msg, 'time_until_reset': time_until_reset, 'percentage_used': usage['percentage_used']})}\n\n"
+                        # Send content so frontend can finalize
+                        yield f"data: {json.dumps({'chunk': limit_msg})}\n\n"
+                        # Signal completion
+                        yield f"data: {json.dumps({'done': True})}\n\n"
+                        yield f"data: [DONE]\n\n"
+
+                    return StreamingResponse(
+                        limit_exceeded_response(),
+                        media_type="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+                    )
+        except Exception as e:
+            # Log error but don't block the request if usage check fails
+            logger.error(f"Error checking usage limit: {e}", exc_info=True)
+
         # Convert conversation history
         conversation_history = None
         if chat_request.conversation_history:

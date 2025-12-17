@@ -5,7 +5,7 @@ Tracks incidents, bans users temporarily, and maintains security memory.
 import hashlib
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from app.db import db
 
@@ -166,7 +166,7 @@ class SecurityService:
             return {
                 "is_safe": False,
                 "is_banned": True,
-                "ban_expires_at": datetime.utcnow() + timedelta(hours=BAN_DURATION_HOURS),
+                "ban_expires_at": datetime.now(timezone.utc) + timedelta(hours=BAN_DURATION_HOURS),
                 "incident_count": profile["incidentCount"],
                 "risk_score": risk_score,
                 "matched_patterns": matched_patterns,
@@ -200,7 +200,7 @@ class SecurityService:
             return {"is_banned": False, "expires_at": None, "incident_count": 0}
 
         expires_at = flagged_at + timedelta(hours=BAN_DURATION_HOURS)
-        is_still_banned = datetime.utcnow() < expires_at
+        is_still_banned = datetime.now(timezone.utc) < expires_at
 
         # Auto-unban if time has passed
         if not is_still_banned and profile.get("isFlagged"):
@@ -343,7 +343,7 @@ class SecurityService:
             data={
                 "totalScore": profile["totalScore"] + risk_score,
                 "incidentCount": profile["incidentCount"] + 1,
-                "lastIncidentAt": datetime.utcnow()
+                "lastIncidentAt": datetime.now(timezone.utc)
             }
         )
 
@@ -370,7 +370,7 @@ class SecurityService:
         if not user_id:
             return
 
-        ban_time = datetime.utcnow()
+        ban_time = datetime.now(timezone.utc)
         expires_at = ban_time + timedelta(hours=BAN_DURATION_HOURS)
 
         await db.userriskprofile.update(
@@ -434,7 +434,7 @@ class SecurityService:
         if not user_id:
             return
 
-        unban_time = datetime.utcnow()
+        unban_time = datetime.now(timezone.utc)
 
         await db.userriskprofile.update(
             where={"userId": user_id},
