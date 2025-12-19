@@ -19,7 +19,7 @@ help:
 
 # Python settings
 PYTHON := python3
-VENV := venv
+VENV := .venv
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 UVICORN := $(VENV)/bin/uvicorn
