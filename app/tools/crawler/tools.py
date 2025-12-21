@@ -220,7 +220,7 @@ class RedditTool:
         client = await HTTPClientManager.get_client(
             "reddit",
             headers={
-                "User-Agent": "SELVE-Bot/2.0 (Personality Research; +https://selve.app/bot)",
+                "User-Agent": "SELVE-Bot/2.0 (Personality Research; +https://selve.me/bot)",
             },
         )
 
@@ -362,7 +362,7 @@ class WebPageTool:
         client = await HTTPClientManager.get_client(
             "webpage",
             headers={
-                "User-Agent": "Mozilla/5.0 (compatible; SELVE-Bot/2.0; +https://selve.app/bot)",
+                "User-Agent": "Mozilla/5.0 (compatible; SELVE-Bot/2.0; +https://selve.me/bot)",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
             },
