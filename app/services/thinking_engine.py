@@ -154,12 +154,13 @@ class PlanStep:
 @dataclass
 class ExecutionResult:
     """Result of executing the plan."""
-    
+
     rag_context: Optional[str] = None
     rag_sources: List[Dict[str, str]] = field(default_factory=list)
     web_research: Optional[str] = None
     web_sources: List[Dict[str, str]] = field(default_factory=list)
     personality_insights: Optional[str] = None
+    relevant_memories: List[Any] = field(default_factory=list)  # MemorySearchResult objects
     errors: List[str] = field(default_factory=list)
 
 
@@ -657,7 +658,7 @@ class ThinkingEngine:
                 description="Executing plan",
             )
             
-            execution_result = await self._execute_plan(plan, message, analysis)
+            execution_result = await self._execute_plan(plan, message, analysis, user_state)
             step.complete(execution_result)
             steps.append(step)
             
@@ -753,10 +754,10 @@ class ThinkingEngine:
     ) -> List[PlanStep]:
         """Create execution plan based on analysis."""
         plan = []
-        
+
         # Check if user has assessment
         has_assessment = getattr(user_state, 'has_assessment', False)
-        
+
         # Always fetch personality context if user has assessment
         if has_assessment:
             plan.append(PlanStep(
@@ -764,7 +765,17 @@ class ThinkingEngine:
                 priority=1,
                 parameters={},
             ))
-        
+
+        # Search for relevant memories from older conversations
+        # This implements "reactive memory" pattern from Google ADK
+        user_id = getattr(user_state, 'user_id', None)
+        if user_id:
+            plan.append(PlanStep(
+                action="memory_search",
+                priority=1,  # High priority - run early
+                parameters={},
+            ))
+
         # RAG search if needed
         if analysis.needs_rag:
             plan.append(PlanStep(
@@ -775,7 +786,7 @@ class ThinkingEngine:
                     "dimensions": analysis.referenced_dimensions,
                 },
             ))
-        
+
         # Web research if needed (future)
         if analysis.needs_web_research and ThinkingConfig.WEB_SEARCH_ENABLED:
             plan.append(PlanStep(
@@ -783,10 +794,10 @@ class ThinkingEngine:
                 priority=3,
                 parameters={"topics": analysis.key_topics},
             ))
-        
+
         # Sort by priority
         plan.sort(key=lambda x: x.priority)
-        
+
         return plan
     
     # =========================================================================
@@ -798,33 +809,43 @@ class ThinkingEngine:
         plan: List[PlanStep],
         message: str,
         analysis: AnalysisResult,
+        user_state: Any = None,
     ) -> ExecutionResult:
         """Execute the plan and gather information."""
         result = ExecutionResult()
-        
+
         for step in plan:
             try:
                 if step.action == "rag_search":
                     rag_result = await self._execute_rag_search(
-                        message, 
+                        message,
                         analysis.referenced_dimensions,
                     )
                     result.rag_context = rag_result.get("context")
                     result.rag_sources = rag_result.get("sources", [])
-                
+
+                elif step.action == "memory_search":
+                    # Search for semantically relevant memories from older conversations
+                    if user_state and hasattr(user_state, 'user_id'):
+                        memory_result = await self._execute_memory_search(
+                            message,
+                            user_state.user_id,
+                        )
+                        result.relevant_memories = memory_result.get("memories", [])
+
                 elif step.action == "fetch_personality":
                     # Personality context is already in user_state
                     pass
-                
+
                 elif step.action == "web_search":
                     web_result = await self._execute_web_search(message)
                     result.web_research = web_result.get("context")
                     result.web_sources = web_result.get("sources", [])
-            
+
             except Exception as e:
                 result.errors.append(f"{step.action}: {str(e)}")
                 self.logger.warning(f"Plan step failed: {step.action}: {e}")
-        
+
         return result
     
     async def _execute_rag_search(
@@ -1066,7 +1087,95 @@ class ThinkingEngine:
     def _is_youtube_url(self, url: str) -> bool:
         """Check if URL is a YouTube URL."""
         return any(domain in url.lower() for domain in ['youtube.com', 'youtu.be', 'm.youtube.com'])
-    
+
+    async def _execute_memory_search(
+        self,
+        message: str,
+        user_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Search for semantically relevant memories from older conversations.
+
+        This implements the "reactive memory" pattern from Google ADK,
+        where relevant past conversations are retrieved based on the current query.
+
+        Args:
+            message: Current user message
+            user_id: User ID for filtering memories
+
+        Returns:
+            Dict with memories list
+        """
+        try:
+            from .memory_search_service import MemorySearchService
+
+            memory_service = MemorySearchService()
+
+            # Search for relevant memories
+            result = await memory_service.search_memories(
+                query=message,
+                user_id=user_id,
+                top_k=3,
+                score_threshold=0.6,  # Higher threshold for relevance
+            )
+
+            if result.success and result.data:
+                self.logger.info(f"Found {len(result.data)} relevant memories for query")
+                return {"memories": result.data}
+
+            return {"memories": []}
+
+        except Exception as e:
+            self.logger.warning(f"Memory search failed: {e}")
+            return {"memories": []}
+
+    def _format_memory_context(self, memories: List[Any]) -> str:
+        """
+        Format memory search results as context for LLM.
+
+        Args:
+            memories: List of MemorySearchResult objects
+
+        Returns:
+            Formatted context string
+        """
+        if not memories:
+            return ""
+
+        parts = [
+            "=" * 60,
+            "RELEVANT PAST CONVERSATIONS",
+            "=" * 60,
+            "",
+            "The following are relevant conversations from the past that may provide context:",
+            "",
+        ]
+
+        for i, mem in enumerate(memories[:3], 1):
+            relevance_pct = int(mem.relevance_score * 100)
+            parts.append(f"{i}. {mem.title} (relevance: {relevance_pct}%)")
+            parts.append(f"   Summary: {mem.summary}")
+
+            if mem.key_insights:
+                insights = ", ".join(mem.key_insights[:2])
+                parts.append(f"   Key insights: {insights}")
+
+            if mem.emotional_state:
+                parts.append(f"   Emotional context: {mem.emotional_state}")
+
+            parts.append("")
+
+        parts.extend([
+            "Use these memories to:",
+            "- Maintain continuity across conversations",
+            "- Reference past discussions naturally",
+            "- Understand context and history",
+            "- Avoid repeating information already covered",
+            "=" * 60,
+        ])
+
+        return "\n".join(parts)
+
     # =========================================================================
     # Prompt Building
     # =========================================================================
@@ -1080,11 +1189,17 @@ class ThinkingEngine:
     ) -> str:
         """Build enhanced system prompt with all context."""
         parts = [base_prompt]
-        
+
         # Add user state context (if user_state has to_context_string method)
         if hasattr(user_state, 'to_context_string'):
             parts.append("\n\n" + user_state.to_context_string())
-        
+
+        # Add semantically relevant memories from older conversations
+        if execution_result.relevant_memories:
+            memory_context = self._format_memory_context(execution_result.relevant_memories)
+            if memory_context:
+                parts.append(f"\n\n{memory_context}")
+
         # Add intent-specific guidance
         intent_guidance = self._get_intent_guidance(analysis, user_state)
         if intent_guidance:
@@ -1243,7 +1358,7 @@ class ThinkingEngine:
                 description="Executing plan",
             )
             
-            execution_result = await self._execute_plan(plan, message, analysis)
+            execution_result = await self._execute_plan(plan, message, analysis, user_state)
             step.complete(execution_result)
             steps.append(step)
             
