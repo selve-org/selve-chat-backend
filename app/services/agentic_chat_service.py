@@ -124,13 +124,14 @@ class AgenticChatService:
         self._response_validator = None
         self._llm_service = None
         self._compression_service = None
+        self._geoip_service = None
         self._system_prompt = None
         self._assessment_url = None
-        
+
         # Background task tracking
         self._background_tasks: Set[asyncio.Task] = set()
         self._shutdown_event = asyncio.Event()
-        
+
         self.logger = logging.getLogger(self.__class__.__name__)
     
     # =========================================================================
@@ -178,7 +179,14 @@ class AgenticChatService:
             from app.services.compression_service import CompressionService
             self._compression_service = CompressionService()
         return self._compression_service
-    
+
+    @property
+    def geoip_service(self):
+        if self._geoip_service is None:
+            from app.services.geoip_service import GeoIPService
+            self._geoip_service = GeoIPService()
+        return self._geoip_service
+
     @property
     def system_prompt(self):
         if self._system_prompt is None:
@@ -247,12 +255,29 @@ class AgenticChatService:
         langfuse = get_client()
         from langfuse import propagate_attributes
 
+        # Fetch geolocation if IP provided
+        geo_metadata = {}
+        if client_ip:
+            self.logger.info(f"🌍 Fetching geolocation for IP: {client_ip}")
+            geo_result = await self.geoip_service.get_geolocation(client_ip)
+            self.logger.info(f"🌍 GeoIP result: status={geo_result.status}, has_data={geo_result.data is not None}")
+            if geo_result.status == "success" and geo_result.data:
+                geo_metadata = geo_result.data.to_dict()
+                self.logger.info(f"🌍 Geo metadata: {geo_metadata}")
+            else:
+                self.logger.warning(f"🌍 GeoIP lookup failed: {geo_result.status}")
+        else:
+            self.logger.debug("🌍 No client_ip provided for GeoIP lookup")
+
         # CRITICAL FIX: Use propagate_attributes to set user_id and session_id
         # This ensures users appear in Langfuse dashboard
         with propagate_attributes(
             user_id=clerk_user_id or "anonymous",
             session_id=session_id,
-            metadata={"streaming": "true"},
+            metadata={
+                "streaming": "true",
+                **geo_metadata,  # Include geo data: ip, city, state, country, timezone
+            },
             tags=["chat", "selve-agent"],
         ):
             with langfuse.start_as_current_observation(
