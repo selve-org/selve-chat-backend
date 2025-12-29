@@ -27,7 +27,15 @@ def format_relative_time(timestamp: datetime) -> str:
 
     Examples: "2 hours ago", "3 days ago", "last week", "2 months ago"
     """
-    now = datetime.utcnow()
+    from datetime import timezone
+
+    # Use timezone-aware UTC datetime to avoid naive/aware mismatch
+    now = datetime.now(timezone.utc)
+
+    # Ensure timestamp is timezone-aware (handle both naive and aware timestamps)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
     delta = now - timestamp
 
     seconds = delta.total_seconds()

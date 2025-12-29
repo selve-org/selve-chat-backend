@@ -261,11 +261,17 @@ class AgenticChatService:
             self.logger.info(f"🌍 Fetching geolocation for IP: {client_ip}")
             geo_result = await self.geoip_service.get_geolocation(client_ip)
             self.logger.info(f"🌍 GeoIP result: status={geo_result.status}, has_data={geo_result.data is not None}")
-            if geo_result.status == "success" and geo_result.data:
+
+            # Check status using .value since status is an enum
+            if geo_result.status.value == "success" and geo_result.data:
                 geo_metadata = geo_result.data.to_dict()
                 self.logger.info(f"🌍 Geo metadata: {geo_metadata}")
+            elif geo_result.status.value == "success" and not geo_result.data:
+                # Success but no data (e.g., localhost) - this is expected
+                self.logger.debug(f"🌍 GeoIP returned no data for IP: {client_ip} (likely localhost)")
             else:
-                self.logger.warning(f"🌍 GeoIP lookup failed: {geo_result.status}")
+                # Actual failure
+                self.logger.warning(f"🌍 GeoIP lookup failed with status: {geo_result.status}")
         else:
             self.logger.debug("🌍 No client_ip provided for GeoIP lookup")
 
