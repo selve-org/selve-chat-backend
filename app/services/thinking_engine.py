@@ -159,6 +159,8 @@ class ExecutionResult:
     rag_sources: List[Dict[str, str]] = field(default_factory=list)
     web_research: Optional[str] = None
     web_sources: List[Dict[str, str]] = field(default_factory=list)
+    youtube_context: Optional[str] = None
+    youtube_sources: List[Dict[str, str]] = field(default_factory=list)
     personality_insights: Optional[str] = None
     relevant_memories: List[Any] = field(default_factory=list)  # MemorySearchResult objects
     errors: List[str] = field(default_factory=list)
@@ -641,7 +643,7 @@ class ThinkingEngine:
                 description="Creating execution plan",
             )
             
-            plan = self._create_plan(analysis, user_state)
+            plan = self._create_plan(analysis, user_state, message)
             step.complete(plan)
             steps.append(step)
             
@@ -690,6 +692,7 @@ class ThinkingEngine:
                 conversation_history=conversation_history,
                 rag_context=execution_result.rag_context,
                 web_research=execution_result.web_research,
+                youtube_context=execution_result.youtube_context,
             )
             
             # Stream response
@@ -751,6 +754,7 @@ class ThinkingEngine:
         self,
         analysis: AnalysisResult,
         user_state: Any,
+        message: str,
     ) -> List[PlanStep]:
         """Create execution plan based on analysis."""
         plan = []
@@ -785,6 +789,23 @@ class ThinkingEngine:
                     "topics": analysis.key_topics,
                     "dimensions": analysis.referenced_dimensions,
                 },
+            ))
+
+        # YouTube transcript search for psychology/educational content
+        # Search when asking about psychological concepts, behaviors, or educational topics
+        youtube_keywords = [
+            "psychology", "cognitive", "behavior", "mental", "emotion", "social",
+            "thinking", "learning", "development", "personality", "motivation",
+            "consciousness", "perception", "memory", "decision", "bias", "anxiety",
+            "depression", "therapy", "mindfulness", "self-improvement", "habit",
+            "procrastination", "creativity", "intelligence", "narcissism", "empathy"
+        ]
+        message_lower = message.lower()
+        if any(keyword in message_lower for keyword in youtube_keywords):
+            plan.append(PlanStep(
+                action="youtube_search",
+                priority=2,  # Same priority as RAG
+                parameters={},
             ))
 
         # Web research if needed (future)
@@ -836,6 +857,11 @@ class ThinkingEngine:
                 elif step.action == "fetch_personality":
                     # Personality context is already in user_state
                     pass
+
+                elif step.action == "youtube_search":
+                    youtube_result = await self._execute_youtube_search(message)
+                    result.youtube_context = youtube_result.get("context")
+                    result.youtube_sources = youtube_result.get("sources", [])
 
                 elif step.action == "web_search":
                     web_result = await self._execute_web_search(message)
@@ -1176,6 +1202,44 @@ class ThinkingEngine:
 
         return "\n".join(parts)
 
+    async def _execute_youtube_search(
+        self,
+        message: str,
+    ) -> Dict[str, Any]:
+        """
+        Search YouTube psychology transcripts for relevant educational content.
+
+        This searches pre-indexed YouTube transcripts (TED-Ed, Crash Course, etc.)
+        stored in Qdrant for semantic similarity.
+
+        Args:
+            message: User's query
+
+        Returns:
+            Dict with context and sources
+        """
+        try:
+            from app.tools.youtube_tool import search_youtube_transcripts
+
+            # Search YouTube transcripts
+            result = await search_youtube_transcripts(
+                query=message,
+                top_k=3,
+            )
+
+            if result.get("context"):
+                self.logger.info(f"Found YouTube transcript content from {len(result.get('videos', []))} videos")
+                return {
+                    "context": result["context"],
+                    "sources": result.get("sources", []),
+                }
+
+            return {"context": None, "sources": []}
+
+        except Exception as e:
+            self.logger.warning(f"YouTube transcript search failed: {e}")
+            return {"context": None, "sources": []}
+
     # =========================================================================
     # Prompt Building
     # =========================================================================
@@ -1277,10 +1341,11 @@ class ThinkingEngine:
         conversation_history: List[Dict[str, str]],
         rag_context: Optional[str],
         web_research: Optional[str] = None,
+        youtube_context: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """Build message list for LLM."""
         messages = [{"role": "system", "content": system_prompt}]
-        
+
         # Add conversation history
         if conversation_history:
             for msg in conversation_history[-10:]:  # Last 10 messages
@@ -1289,22 +1354,25 @@ class ThinkingEngine:
                         "role": msg["role"],
                         "content": msg["content"],
                     })
-        
+
         # Build user message with context
         user_message = message
         context_parts = []
-        
+
         if rag_context:
             context_parts.append(f"<knowledge_context>\n{rag_context}\n</knowledge_context>")
-        
+
+        if youtube_context:
+            context_parts.append(f"<youtube_transcripts>\n{youtube_context}\n</youtube_transcripts>")
+
         if web_research:
             context_parts.append(f"<web_research>\n{web_research}\n</web_research>")
-        
+
         if context_parts:
             user_message = "\n\n".join(context_parts) + f"\n\nUser Question: {message}"
-        
+
         messages.append({"role": "user", "content": user_message})
-        
+
         return messages
     
     # =========================================================================
@@ -1348,7 +1416,7 @@ class ThinkingEngine:
                 description="Creating execution plan",
             )
             
-            plan = self._create_plan(analysis, user_state)
+            plan = self._create_plan(analysis, user_state, message)
             step.complete(plan)
             steps.append(step)
             
@@ -1381,8 +1449,9 @@ class ThinkingEngine:
                 conversation_history=conversation_history,
                 rag_context=execution_result.rag_context,
                 web_research=execution_result.web_research,
+                youtube_context=execution_result.youtube_context,
             )
-            
+
             # Non-streaming generation
             llm_response = await asyncio.wait_for(
                 self.llm_service.generate_response_async(

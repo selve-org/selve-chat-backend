@@ -23,6 +23,7 @@ from .crawler import (
     InMemoryRateLimiter,
     RateLimiter,
     RedditRequest,
+    RedditTool,
     RedisRateLimiter,
     SSRFProtection,
     TOOL_DEFINITIONS,
