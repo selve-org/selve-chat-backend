@@ -35,6 +35,10 @@ httpx==0.26.0
 redis==5.0.1
 beautifulsoup4==4.12.3
 lxml==4.9.4
+aiohttp==3.13.2  # Async HTTP client for web crawler
+
+# Automated Scheduling
+apscheduler==3.11.2  # Daily web crawler scheduler
 
 # Error Tracking & Monitoring
 sentry-sdk[fastapi]==1.40.0
