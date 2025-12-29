@@ -1,0 +1,85 @@
+{
+  "timestamp": "2025-12-29T14:04:23.031834",
+  "total_personas": 3,
+  "avg_deviation_across_all": 14.583333333333334,
+  "max_deviation_across_all": 58,
+  "excellent_count": 0,
+  "good_count": 1,
+  "acceptable_count": 0,
+  "poor_count": 2,
+  "dimension_avg_deviations": {
+    "LUMEN": 11.666666666666666,
+    "AETHER": 11.666666666666666,
+    "ORPHEUS": 13.333333333333334,
+    "ORIN": 22.666666666666668,
+    "LYRA": 7.666666666666667,
+    "VARA": 15,
+    "CHRONOS": 25.666666666666668,
+    "KAEL": 9
+  },
+  "overall_grade": "B+",
+  "overall_score": 8.083333333333334,
+  "persona_results": [
+    {
+      "persona_id": "persona_001_anxious_perfectionist",
+      "persona_name": "Sarah Chen",
+      "avg_deviation": 14,
+      "max_deviation": 33,
+      "within_5_points": 4,
+      "within_10_points": 4,
+      "passed_excellent": false,
+      "passed_good": false,
+      "judge_score": 7.6,
+      "key_patterns_detected": [
+        "Very high organization (ORIN ~88)",
+        "Very low emotional stability (AETHER ~18)"
+      ],
+      "key_patterns_missed": [
+        "Low assertiveness (KAEL ~30)",
+        "Low social energy (LUMEN ~25)",
+        "High empathy (ORPHEUS ~72)",
+        "High honesty/straightforwardness (VARA ~78)"
+      ]
+    },
+    {
+      "persona_id": "persona_002_charismatic_entrepreneur",
+      "persona_name": "Marcus Johnson",
+      "avg_deviation": 23.375,
+      "max_deviation": 58,
+      "within_5_points": 3,
+      "within_10_points": 4,
+      "passed_excellent": false,
+      "passed_good": false,
+      "judge_score": 7.2,
+      "key_patterns_detected": [
+        "Very high social energy (LUMEN ~92)",
+        "Very high creativity (LYRA ~85)",
+        "Very high assertiveness (KAEL ~88)"
+      ],
+      "key_patterns_missed": [
+        "Very low organization (ORIN ~22)",
+        "Low patience (CHRONOS ~28)"
+      ]
+    },
+    {
+      "persona_id": "persona_013_balanced_therapist",
+      "persona_name": "Dr. Maya Patel",
+      "avg_deviation": 6.375,
+      "max_deviation": 10,
+      "within_5_points": 3,
+      "within_10_points": 8,
+      "passed_excellent": false,
+      "passed_good": true,
+      "judge_score": 8.2,
+      "key_patterns_detected": [
+        "High empathy without self-sacrifice (ORPHEUS ~82)",
+        "High emotional stability (AETHER ~75)",
+        "Moderate-high creativity (LYRA ~72)"
+      ],
+      "key_patterns_missed": [
+        "Moderate assertiveness - healthy boundaries (KAEL ~65)",
+        "Moderate-high organization (ORIN ~68)"
+      ]
+    }
+  ]
+}

@@ -38,6 +38,10 @@ class ChatRequest(BaseModel):
         default=None,
         description="URL for the SELVE assessment (used when scores are missing)"
     )
+    user_timezone: Optional[str] = Field(
+        default="UTC",
+        description="User's timezone for temporal awareness (e.g., 'America/New_York')"
+    )
 
     # Regeneration context fields
     regeneration_type: Optional[str] = Field(

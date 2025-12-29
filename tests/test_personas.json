@@ -1,0 +1,1089 @@
+{
+  "personas": [
+    {
+      "id": "persona_001_anxious_perfectionist",
+      "name": "Sarah Chen",
+      "age": 28,
+      "occupation": "Software Engineer",
+      "background": "Lives alone in Seattle, works at a tech startup. Struggles with imposter syndrome despite being highly skilled. Over-prepares for everything, keeps detailed to-do lists, often stays late at work to double-check code. Has difficulty relaxing.",
+      "ground_truth_scores": {
+        "LUMEN": 25,
+        "AETHER": 18,
+        "ORPHEUS": 72,
+        "ORIN": 88,
+        "LYRA": 55,
+        "VARA": 78,
+        "CHRONOS": 42,
+        "KAEL": 30
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Frequently second-guesses decisions",
+          "Asks for reassurance multiple times",
+          "Mentions checking things repeatedly",
+          "Talks about anxiety before presentations or meetings",
+          "Describes elaborate planning rituals"
+        ],
+        "relationship_tells": [
+          "Worries about being a burden to friends",
+          "Prefers small gatherings to large parties",
+          "Takes criticism very hard",
+          "Apologizes excessively"
+        ],
+        "work_behaviors": [
+          "Color-coded calendar and task systems",
+          "Arrives early, stays late",
+          "Struggles to delegate",
+          "Rewrites code multiple times before submitting"
+        ],
+        "stress_responses": [
+          "Insomnia when project deadlines approach",
+          "Crying in bathroom at work",
+          "Obsessive list-making",
+          "Emotional eating"
+        ]
+      },
+      "expected_chat_samples": [
+        "I've been feeling really overwhelmed at work. I keep going over my code reviews like 10 times before submitting because I'm terrified of making mistakes.",
+        "Sometimes I wonder if everyone secretly thinks I'm not good enough. Like, I got this promotion but I feel like it was a mistake.",
+        "I can't turn my brain off at night. I lie there replaying conversations from the day, thinking about what I should have said differently."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very low emotional stability (AETHER ~18)",
+          "Very high organization (ORIN ~88)",
+          "Low assertiveness (KAEL ~30)",
+          "Low social energy (LUMEN ~25)",
+          "High empathy (ORPHEUS ~72)",
+          "High honesty/straightforwardness (VARA ~78)"
+        ],
+        "key_insights": [
+          "Perfectionism driven by anxiety, not genuine enjoyment of order",
+          "Organization is a coping mechanism for feeling out of control",
+          "Low assertiveness makes it hard to set boundaries at work",
+          "High empathy leads to absorbing others' stress"
+        ]
+      }
+    },
+    {
+      "id": "persona_002_charismatic_entrepreneur",
+      "name": "Marcus Johnson",
+      "age": 35,
+      "occupation": "Startup Founder",
+      "background": "Extroverted networker who thrives on chaos. Founded 3 companies, 2 failed but learned from each. Loves pitching ideas, terrible with paperwork. Has a team that handles the details while he focuses on vision and relationships. Always has 5 projects going at once.",
+      "ground_truth_scores": {
+        "LUMEN": 92,
+        "AETHER": 78,
+        "ORPHEUS": 55,
+        "ORIN": 22,
+        "LYRA": 85,
+        "VARA": 45,
+        "CHRONOS": 28,
+        "KAEL": 88
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Jumps from topic to topic rapidly",
+          "Interrupts with new ideas mid-conversation",
+          "Uses lots of hand gestures and energy",
+          "Tells engaging stories about networking wins",
+          "Rarely mentions details or logistics"
+        ],
+        "relationship_tells": [
+          "Has wide network but few deep friendships",
+          "Charms people easily but can be self-centered",
+          "Forgets important dates unless reminded",
+          "Partners complain about lack of follow-through on household tasks"
+        ],
+        "work_behaviors": [
+          "Thrives in brainstorming sessions",
+          "Delegates everything possible",
+          "Office is a mess of sticky notes and scribbles",
+          "Starts projects with enthusiasm, loses interest in execution",
+          "Best at client-facing roles"
+        ],
+        "stress_responses": [
+          "Doubles down on networking and social activities",
+          "Starts even MORE projects to distract from problems",
+          "Becomes irritable if forced to sit still with paperwork",
+          "Relies on team to put out fires"
+        ]
+      },
+      "expected_chat_samples": [
+        "Bro, I just had the BEST meeting with a potential investor. The energy was insane. We're talking 5 million seed round if we can nail the pitch next week.",
+        "My assistant keeps asking me to sign these contracts but honestly, I haven't even read them. That's what lawyers are for, right? I need to focus on the big picture.",
+        "I thrive on chaos. Give me a crisis and 100 things happening at once, and I'm in my element. Give me a quiet office with spreadsheets? I'll lose my mind."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very high social energy (LUMEN ~92)",
+          "Very low organization (ORIN ~22)",
+          "Very high creativity (LYRA ~85)",
+          "Very high assertiveness (KAEL ~88)",
+          "Low patience (CHRONOS ~28)",
+          "Moderate honesty - strategic communication (VARA ~45)"
+        ],
+        "key_insights": [
+          "High assertiveness paired with low patience = impulsive decision-making",
+          "Needs structure from others to compensate for low organization",
+          "Charisma is a strength but can mask lack of depth in relationships",
+          "Thrives on external stimulation, struggles with introspection"
+        ]
+      }
+    },
+    {
+      "id": "persona_003_introverted_artist",
+      "name": "Yuki Tanaka",
+      "age": 42,
+      "occupation": "Freelance Illustrator",
+      "background": "Works from home studio. Deeply creative and introspective. Prefers cats to people. Takes weeks to reply to emails but creates stunning artwork. Avoids conflict at all costs. Lives in a organized creative chaos - knows where everything is despite appearances.",
+      "ground_truth_scores": {
+        "LUMEN": 12,
+        "AETHER": 45,
+        "ORPHEUS": 68,
+        "ORIN": 38,
+        "LYRA": 95,
+        "VARA": 82,
+        "CHRONOS": 85,
+        "KAEL": 18
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Long pauses before responding",
+          "Thoughtful, carefully chosen words",
+          "Discusses ideas and art more than people",
+          "Avoids small talk, prefers deep topics",
+          "Rarely initiates conversations"
+        ],
+        "relationship_tells": [
+          "Has 2-3 very close friends, no desire for more",
+          "Needs alone time to recharge after social events",
+          "Shows love through handmade gifts rather than words",
+          "Avoids confrontation, sometimes to their detriment",
+          "Prefers text/email over phone calls"
+        ],
+        "work_behaviors": [
+          "Works best in late-night solitude",
+          "Misses deadlines occasionally but quality is exceptional",
+          "Organized system only they understand",
+          "Turns down high-paying work if it requires too much client interaction",
+          "Loses track of time when in creative flow"
+        ],
+        "stress_responses": [
+          "Complete withdrawal from social media",
+          "Binge-watches shows alone",
+          "Creates art obsessively as therapy",
+          "Ignores emails for days"
+        ]
+      },
+      "expected_chat_samples": [
+        "I spent 14 hours straight on this piece yesterday. Didn't eat, didn't check my phone. Just me and the canvas. That's when I feel most alive.",
+        "A client got upset because I didn't respond to their email for a week. I just... I can't handle the constant back-and-forth. I wish I could just create and not deal with people.",
+        "My friend invited me to a party this weekend. I already feel exhausted thinking about it. I'll probably make an excuse to leave early."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very low social energy (LUMEN ~12)",
+          "Very high creativity (LYRA ~95)",
+          "Very low assertiveness (KAEL ~18)",
+          "High patience (CHRONOS ~85)",
+          "High empathy (ORPHEUS ~68)",
+          "High honesty (VARA ~82)",
+          "Low organization - but functional for them (ORIN ~38)"
+        ],
+        "key_insights": [
+          "Introversion is not shyness - it's deep comfort with solitude",
+          "Creativity is their primary mode of processing the world",
+          "Low assertiveness leads to avoiding necessary conflicts",
+          "High patience allows for meticulous detail work",
+          "Needs to develop boundaries with clients without guilt"
+        ]
+      }
+    },
+    {
+      "id": "persona_004_type_a_executive",
+      "name": "Jennifer Martinez",
+      "age": 48,
+      "occupation": "VP of Operations",
+      "background": "Runs a tight ship. Promotion every 3-4 years. Wakes at 5am for gym, inbox zero by 7am. Two teenage kids who find her intimidating. Divorced once, current partner calls her 'intense.' Runs 3 miles daily. Volunteers on nonprofit boards.",
+      "ground_truth_scores": {
+        "LUMEN": 65,
+        "AETHER": 82,
+        "ORPHEUS": 42,
+        "ORIN": 95,
+        "LYRA": 35,
+        "VARA": 88,
+        "CHRONOS": 38,
+        "KAEL": 92
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Gets to the point quickly, no filler",
+          "Interrupts if conversation becomes inefficient",
+          "Speaks in bullet points and action items",
+          "Rarely discusses feelings, focuses on facts",
+          "Gives direct, sometimes blunt feedback"
+        ],
+        "relationship_tells": [
+          "Struggles with vulnerability",
+          "Shows love through problem-solving, not emotional support",
+          "Friends respect her but find her exhausting",
+          "Kids say she 'doesn't understand emotions'",
+          "Impatient with people who complain without taking action"
+        ],
+        "work_behaviors": [
+          "Arrives first, leaves last",
+          "Color-coded calendar down to 15-minute blocks",
+          "Delegates efficiently and expects results",
+          "Low tolerance for excuses or missed deadlines",
+          "Respected but feared by team"
+        ],
+        "stress_responses": [
+          "Becomes even MORE controlling and micromanaging",
+          "Increases exercise intensity",
+          "Snaps at family members",
+          "Works longer hours to feel in control"
+        ]
+      },
+      "expected_chat_samples": [
+        "I don't understand why my daughter says I'm not supportive. I literally solved her problem with her teacher in one phone call. What more does she want?",
+        "People at work think I'm too harsh, but I'm just being honest. If someone's underperforming, they should know. Sugarcoating helps nobody.",
+        "I have zero patience for inefficiency. If a meeting doesn't have an agenda and clear outcomes, I won't attend. Life's too short."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very high organization (ORIN ~95)",
+          "Very high assertiveness (KAEL ~92)",
+          "High emotional stability (AETHER ~82)",
+          "Low empathy (ORPHEUS ~42)",
+          "Low patience (CHRONOS ~38)",
+          "Low creativity - prefers proven methods (LYRA ~35)",
+          "Moderate-high social energy (LUMEN ~65)"
+        ],
+        "key_insights": [
+          "High assertiveness + low empathy = effective but alienating leadership",
+          "Organization gives sense of control in chaotic world",
+          "Low creativity means resistance to unconventional solutions",
+          "Needs to develop emotional intelligence for relationships",
+          "High stability is a strength but can appear cold to others"
+        ]
+      }
+    },
+    {
+      "id": "persona_005_anxious_people_pleaser",
+      "name": "David Park",
+      "age": 31,
+      "occupation": "Social Worker",
+      "background": "Deeply empathetic, takes on everyone's problems. Boundary issues - can't say no. Works 50+ hours but only paid for 40. Comes home emotionally drained. Struggles with decision-making. Partners have called him a pushover. Therapy 2x/month for anxiety.",
+      "ground_truth_scores": {
+        "LUMEN": 55,
+        "AETHER": 22,
+        "ORPHEUS": 94,
+        "ORIN": 48,
+        "LYRA": 62,
+        "VARA": 85,
+        "CHRONOS": 75,
+        "KAEL": 15
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Asks others what they want before stating own preference",
+          "Apologizes constantly, even when not at fault",
+          "Seeks validation and reassurance",
+          "Tells stories about helping others at own expense",
+          "Difficulty making decisions, asks for others' opinions"
+        ],
+        "relationship_tells": [
+          "Attracts people who take advantage of kindness",
+          "Gives more than receives in friendships",
+          "Avoids conflict by agreeing even when disagrees",
+          "Feels guilty when saying no",
+          "Partners become frustrated with lack of assertiveness"
+        ],
+        "work_behaviors": [
+          "Takes on extra shifts when asked",
+          "Brings work stress home emotionally",
+          "Skips lunch to help clients",
+          "Difficulty separating professional boundaries from personal care",
+          "Burnout risk is high"
+        ],
+        "stress_responses": [
+          "Panic attacks when overwhelmed",
+          "Emotional eating and weight fluctuations",
+          "Insomnia from worrying about others",
+          "Physical symptoms like headaches and stomach issues",
+          "Withdraws from self-care to help others more"
+        ]
+      },
+      "expected_chat_samples": [
+        "A client called me at 11pm in crisis and I talked them through it for an hour. My partner was annoyed I didn't set boundaries, but what was I supposed to do? Just let them suffer?",
+        "I feel guilty even thinking about my own needs. Like, I have so much compared to the people I serve. Who am I to complain about being tired?",
+        "My boss asked if I could cover another shift this weekend and I said yes even though I'm exhausted. I just can't say no when people need help."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very high empathy (ORPHEUS ~94)",
+          "Very low assertiveness (KAEL ~15)",
+          "Very low emotional stability (AETHER ~22)",
+          "High patience (CHRONOS ~75)",
+          "High honesty (VARA ~85)",
+          "Moderate creativity (LYRA ~62)",
+          "Moderate social energy (LUMEN ~55)",
+          "Moderate organization (ORIN ~48)"
+        ],
+        "key_insights": [
+          "Empathy without assertiveness = self-sacrifice and burnout",
+          "Low emotional stability is exacerbated by absorbing others' pain",
+          "Needs to learn that boundaries are compassionate, not selfish",
+          "High patience allows tolerance of mistreatment",
+          "Career choice aligns with empathy but lacks self-protection"
+        ]
+      }
+    },
+    {
+      "id": "persona_006_cynical_academic",
+      "name": "Dr. Robert Chen",
+      "age": 56,
+      "occupation": "Philosophy Professor",
+      "background": "Tenured, intellectually brilliant, emotionally distant. Three failed marriages. Students find him intimidating. Publishes prolifically. Prefers books to people. Lives alone with extensive library. Skeptical of pop psychology and self-help.",
+      "ground_truth_scores": {
+        "LUMEN": 28,
+        "AETHER": 72,
+        "ORPHEUS": 25,
+        "ORIN": 62,
+        "LYRA": 88,
+        "VARA": 92,
+        "CHRONOS": 68,
+        "KAEL": 78
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Intellectualizes emotions rather than feeling them",
+          "Corrects others' logic or facts mid-conversation",
+          "Speaks in abstractions and philosophical concepts",
+          "Dismissive of emotional reasoning",
+          "Rarely asks personal questions"
+        ],
+        "relationship_tells": [
+          "Colleagues respect him but don't invite him to social events",
+          "Former partners say he's emotionally unavailable",
+          "Prefers debates to heart-to-heart talks",
+          "Shows affection through intellectual engagement, not warmth",
+          "Uncomfortable with displays of emotion"
+        ],
+        "work_behaviors": [
+          "Office hours are rigorous intellectual interrogations",
+          "Students either love or hate him - no middle ground",
+          "Writes scathing peer reviews",
+          "Productive researcher, poor committee member",
+          "Treats teaching as intellectual exercise, not mentorship"
+        ],
+        "stress_responses": [
+          "Retreats into reading and writing",
+          "Becomes even more critical and argumentative",
+          "Drinks wine alone while reading philosophy",
+          "Emotional detachment intensifies"
+        ]
+      },
+      "expected_chat_samples": [
+        "My ex-wife said I 'live in my head.' Well, yes. That's where interesting things happen. Reality is rather disappointing in comparison.",
+        "A student cried in my office after I critiqued their paper. I don't understand - the criticism was accurate and necessary for intellectual growth. Why the emotion?",
+        "I find most people intellectually lazy. They feel rather than think, which leads to sloppy reasoning and poor decisions."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very low empathy (ORPHEUS ~25)",
+          "Very high honesty - brutally direct (VARA ~92)",
+          "High creativity - abstract thinking (LYRA ~88)",
+          "High assertiveness (KAEL ~78)",
+          "High emotional stability - or detachment (AETHER ~72)",
+          "Moderate-high patience for intellectual pursuits (CHRONOS ~68)",
+          "Low social energy (LUMEN ~28)",
+          "Moderate-high organization (ORIN ~62)"
+        ],
+        "key_insights": [
+          "High intellect used as defense against emotional vulnerability",
+          "Low empathy makes relationships transactional and cold",
+          "Honesty is a strength but lacks compassionate delivery",
+          "Needs to develop emotional intelligence to connect with others",
+          "Creativity thrives in abstract realm but struggles with human connection"
+        ]
+      }
+    },
+    {
+      "id": "persona_007_chaotic_creative",
+      "name": "Luna Rodriguez",
+      "age": 26,
+      "occupation": "Freelance Graphic Designer / Musician",
+      "background": "Lives in Brooklyn studio apartment that's a creative explosion. Three half-finished projects always going. Forgets to eat when in flow state. Terrible with money, great with art. Friends love her spontaneity but she's unreliable for plans. ADHD diagnosis at 24.",
+      "ground_truth_scores": {
+        "LUMEN": 78,
+        "AETHER": 35,
+        "ORPHEUS": 72,
+        "ORIN": 15,
+        "LYRA": 96,
+        "VARA": 68,
+        "CHRONOS": 22,
+        "KAEL": 52
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Stream of consciousness, jumps between topics",
+          "Gets excited and talks rapidly about creative ideas",
+          "Loses track of time in conversations",
+          "Forgets what she was saying mid-sentence",
+          "Highly expressive, uses lots of emojis and exclamations"
+        ],
+        "relationship_tells": [
+          "Makes plans enthusiastically, cancels last minute",
+          "Deep emotional connections but struggles with follow-through",
+          "Friends know not to rely on her for practical things",
+          "Romantic relationships intense but chaotic",
+          "Shows love through spontaneous gestures and creativity"
+        ],
+        "work_behaviors": [
+          "Brilliant creative output in bursts",
+          "Misses deadlines frequently",
+          "Works all night when inspired, sleeps all day after",
+          "Constantly starting new projects, finishing few",
+          "Income is inconsistent, stress about money",
+          "Desk is a hurricane of sketches and materials"
+        ],
+        "stress_responses": [
+          "Emotional volatility - crying then laughing",
+          "Impulsive spending on art supplies",
+          "Starts even MORE projects to distract from stress",
+          "Forgets to eat, sleep becomes erratic",
+          "Calls friends in crisis at 2am"
+        ]
+      },
+      "expected_chat_samples": [
+        "OMG I just had the BEST idea for a mural project!! I'm literally gonna drop everything and start sketching right now. Wait, what was I supposed to be doing today?",
+        "My landlord is mad because rent is late again. I just... I lose track of invoices and due dates. Also I spent my rent money on concert tickets because Bad Bunny is only here once.",
+        "I started medication for ADHD and it helps but also I feel like I'm losing my creative spark? Like, am I even me without the chaos?"
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very high creativity (LYRA ~96)",
+          "Very low organization (ORIN ~15)",
+          "Low patience/impulsivity (CHRONOS ~22)",
+          "Low emotional stability (AETHER ~35)",
+          "High social energy (LUMEN ~78)",
+          "High empathy (ORPHEUS ~72)",
+          "Moderate-high honesty (VARA ~68)",
+          "Moderate assertiveness (KAEL ~52)"
+        ],
+        "key_insights": [
+          "Creativity is off the charts but organization collapse causes life chaos",
+          "ADHD traits manifest in low patience, low organization, impulsivity",
+          "High empathy + low stability = emotional rollercoaster in relationships",
+          "Needs external structure to harness creative genius",
+          "Struggles with adult responsibilities despite talent"
+        ]
+      }
+    },
+    {
+      "id": "persona_008_stoic_veteran",
+      "name": "James Mitchell",
+      "age": 62,
+      "occupation": "Retired Marine, Security Consultant",
+      "background": "30 years military service. Thrives on routine and discipline. Wakes at 0500 daily, makes bed hospital-corner tight. Emotionally reserved, 'weak' to show vulnerability. Two adult kids who say he's hard to talk to. Married 35 years to patient wife. PTSD managed through structure.",
+      "ground_truth_scores": {
+        "LUMEN": 42,
+        "AETHER": 88,
+        "ORPHEUS": 38,
+        "ORIN": 96,
+        "LYRA": 28,
+        "VARA": 85,
+        "CHRONOS": 82,
+        "KAEL": 85
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Brief, direct answers",
+          "Uncomfortable with emotional topics",
+          "Uses military terminology and analogies",
+          "Values loyalty, duty, discipline",
+          "Rarely volunteers personal information"
+        ],
+        "relationship_tells": [
+          "Shows love through acts of service, not words",
+          "Uncomfortable with affection or sentiment",
+          "Kids say they respect but don't feel close to him",
+          "Wife has learned to interpret his silence",
+          "Struggles to understand others' emotional needs"
+        ],
+        "work_behaviors": [
+          "Impeccable time management",
+          "Expects same discipline from others",
+          "Black-and-white thinking about rules",
+          "Resistant to change or new methods",
+          "Uncomfortable with ambiguity"
+        ],
+        "stress_responses": [
+          "Becomes even more rigid and controlled",
+          "Withdraws emotionally further",
+          "Increases physical training",
+          "Nightmares about combat resurface",
+          "Irritability if routine is disrupted"
+        ]
+      },
+      "expected_chat_samples": [
+        "My daughter says I don't 'open up.' I provided for my family for 35 years. I kept them safe. What more is there to say?",
+        "Young people today lack discipline. Everything's feelings and participation trophies. In my day, you did your duty and didn't complain.",
+        "I don't understand why people can't just follow procedures. There's a right way and a wrong way. Simple as that."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very high organization (ORIN ~96)",
+          "Very high emotional stability - or emotional suppression (AETHER ~88)",
+          "High assertiveness (KAEL ~85)",
+          "High patience for tasks requiring discipline (CHRONOS ~82)",
+          "High honesty (VARA ~85)",
+          "Low empathy (ORPHEUS ~38)",
+          "Low creativity - prefers proven methods (LYRA ~28)",
+          "Moderate-low social energy (LUMEN ~42)"
+        ],
+        "key_insights": [
+          "Extreme organization is coping mechanism for PTSD and trauma",
+          "High stability may actually be emotional suppression/avoidance",
+          "Low empathy limits ability to connect with family emotionally",
+          "Rigidity (high ORIN, low LYRA) makes adaptation difficult",
+          "Needs to learn that vulnerability is courage, not weakness"
+        ]
+      }
+    },
+    {
+      "id": "persona_009_manic_salesperson",
+      "name": "Tony Russo",
+      "age": 39,
+      "occupation": "Car Salesman",
+      "background": "Top performer 8 years running. High energy, persuasive, charming. Three energy drinks before noon. Talks fast, thinks faster. Gambling problem hidden from wife. Childhood trauma channeled into achievement. Can't sit still. Always 'on.' Crashes hard on Sundays.",
+      "ground_truth_scores": {
+        "LUMEN": 94,
+        "AETHER": 32,
+        "ORPHEUS": 48,
+        "ORIN": 38,
+        "LYRA": 58,
+        "VARA": 35,
+        "CHRONOS": 18,
+        "KAEL": 90
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Dominates conversation, hard to get a word in",
+          "Tells exaggerated stories for effect",
+          "Reads people quickly, adjusts approach",
+          "Asks leading questions, subtly manipulative",
+          "Rarely shows genuine vulnerability"
+        ],
+        "relationship_tells": [
+          "Charismatic but exhausting to be around long-term",
+          "Friends are mostly business connections",
+          "Wife complains he's 'never present' even when home",
+          "Kids compete for his attention",
+          "Struggles with intimacy and authenticity"
+        ],
+        "work_behaviors": [
+          "Thrives on competition and commission",
+          "Bends rules without breaking them",
+          "Excellent at reading customers and closing deals",
+          "Impatient with admin work and paperwork",
+          "Can be cutthroat with colleagues"
+        ],
+        "stress_responses": [
+          "Increases risky behaviors (gambling, drinking)",
+          "Becomes more manic and hyperactive",
+          "Crashes into depressive episodes on days off",
+          "Picks fights to release tension",
+          "Compulsive spending"
+        ]
+      },
+      "expected_chat_samples": [
+        "Closed THREE deals today! I'm on fire! You know what? I'm gonna celebrate. Hit the casino, maybe drop a grand or two. I deserve it.",
+        "My wife doesn't get it. She wants me to 'slow down' and 'be present.' But this is who I am. This energy is what pays the bills.",
+        "I can sell anything to anyone. It's a game, you know? Figure out what they want to hear, give it to them. Boom. Signed."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very high social energy - possibly manic (LUMEN ~94)",
+          "Very high assertiveness (KAEL ~90)",
+          "Very low patience (CHRONOS ~18)",
+          "Low emotional stability (AETHER ~32)",
+          "Low honesty - strategic communication (VARA ~35)",
+          "Moderate empathy - transactional (ORPHEUS ~48)",
+          "Low organization (ORIN ~38)",
+          "Moderate creativity (LYRA ~58)"
+        ],
+        "key_insights": [
+          "Extreme social energy may mask underlying anxiety/trauma",
+          "High assertiveness + low honesty = manipulative tendencies",
+          "Low emotional stability manifests as boom/bust cycles",
+          "Needs to address root causes of compulsive behaviors",
+          "Success is external validation to avoid internal pain"
+        ]
+      }
+    },
+    {
+      "id": "persona_010_burned_out_nurse",
+      "name": "Patricia Williams",
+      "age": 44,
+      "occupation": "ER Nurse",
+      "background": "20 years in emergency medicine. Used to be optimistic, now cynical. Compassion fatigue is real. Drinks wine every night to decompress. Divorced, two kids she feels guilty about. Gained 40 pounds from stress eating. Considers quitting monthly but needs the income.",
+      "ground_truth_scores": {
+        "LUMEN": 38,
+        "AETHER": 28,
+        "ORPHEUS": 55,
+        "ORIN": 75,
+        "LYRA": 42,
+        "VARA": 78,
+        "CHRONOS": 52,
+        "KAEL": 62
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Dark humor about death and trauma",
+          "Exhaustion evident in speech patterns",
+          "Cynical about healthcare system",
+          "Talks about patients with detachment (coping mechanism)",
+          "Frequently mentions being tired"
+        ],
+        "relationship_tells": [
+          "Emotionally drained, little left for family",
+          "Kids say she's 'always stressed'",
+          "Divorced husband cited emotional unavailability",
+          "Friends from nursing but rarely socializes outside work",
+          "Guilt about not being 'present' as a mother"
+        ],
+        "work_behaviors": [
+          "Competent but going through motions",
+          "Organized out of necessity, not preference",
+          "Snaps at incompetent colleagues",
+          "Takes on extra shifts for money, regrets it emotionally",
+          "Considered compassionate by patients, dead inside personally"
+        ],
+        "stress_responses": [
+          "Wine becomes multiple glasses per night",
+          "Emotional eating and weight gain",
+          "Insomnia despite exhaustion",
+          "Crying in car before/after shifts",
+          "Fantasizes about quitting and moving to a beach"
+        ]
+      },
+      "expected_chat_samples": [
+        "Another 12-hour shift where someone died on my table. I go home and my kids want help with homework and I just... I have nothing left to give.",
+        "I used to care so much. Now I'm just numb. Clock in, do the work, clock out, pour wine, repeat. This isn't living.",
+        "People think nurses are angels. We're not. We're human. And I'm so tired of being expected to be endlessly compassionate when I'm running on empty."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Low emotional stability - burnout (AETHER ~28)",
+          "Moderate-high organization - functional despite burnout (ORIN ~75)",
+          "High honesty (VARA ~78)",
+          "Moderate assertiveness (KAEL ~62)",
+          "Moderate empathy - compassion fatigue (ORPHEUS ~55)",
+          "Moderate patience (CHRONOS ~52)",
+          "Low creativity (LYRA ~42)",
+          "Low social energy (LUMEN ~38)"
+        ],
+        "key_insights": [
+          "Burnout masking what was likely higher empathy earlier in career",
+          "Organization is survival mechanism, not personality trait",
+          "Low emotional stability is situational, not necessarily baseline",
+          "Needs intervention - career change or serious boundaries",
+          "Guilt about family compounds stress and depression"
+        ]
+      }
+    },
+    {
+      "id": "persona_011_grandiose_narcissist",
+      "name": "Alexander Sterling",
+      "age": 52,
+      "occupation": "Luxury Real Estate Developer",
+      "background": "Self-made millionaire. Name on buildings. Trophy wife 20 years younger. Believes he's smarter than everyone. Surrounds himself with yes-men. Explosive temper when challenged. Generous when it benefits image. Five figure watches. Fears irrelevance and aging.",
+      "ground_truth_scores": {
+        "LUMEN": 85,
+        "AETHER": 68,
+        "ORPHEUS": 15,
+        "ORIN": 82,
+        "LYRA": 62,
+        "VARA": 25,
+        "CHRONOS": 42,
+        "KAEL": 98
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Every story centers himself as the hero",
+          "Name-drops constantly",
+          "Interrupts and dismisses others' opinions",
+          "Brags about wealth and accomplishments",
+          "Cannot admit mistakes or fault"
+        ],
+        "relationship_tells": [
+          "Transactional relationships based on utility",
+          "Surrounds self with people who feed ego",
+          "Discards people when no longer useful",
+          "Wife is trophy, not partner",
+          "Adult children are estranged or dysfunctional"
+        ],
+        "work_behaviors": [
+          "Micromanages when insecure, delegates when confident",
+          "Takes credit for others' work",
+          "Fires people publicly to assert dominance",
+          "Brilliant strategic thinker when ego doesn't interfere",
+          "Litigation history from burning bridges"
+        ],
+        "stress_responses": [
+          "Rage and blame others",
+          "Buys expensive things to feel powerful",
+          "Affair or pursuing younger women",
+          "Increased drinking at high-end bars",
+          "Refuses to acknowledge vulnerability"
+        ]
+      },
+      "expected_chat_samples": [
+        "I closed a $40 million deal last week. The other guy thought he was smart, but I saw the angle he didn't. That's why I'm where I am and he's not.",
+        "My assistant made a mistake and I fired her on the spot. No excuses. Excellence or nothing. That's how you build an empire.",
+        "People are intimidated by success. That's why I have few friends - most people can't handle being around someone operating at my level."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very high assertiveness - aggressive (KAEL ~98)",
+          "Very low empathy - narcissistic (ORPHEUS ~15)",
+          "Very low honesty - manipulative (VARA ~25)",
+          "High social energy - but performative (LUMEN ~85)",
+          "High organization (ORIN ~82)",
+          "Moderate-high emotional stability - or fragile ego masked (AETHER ~68)",
+          "Moderate creativity (LYRA ~62)",
+          "Low patience when not getting his way (CHRONOS ~42)"
+        ],
+        "key_insights": [
+          "Extreme assertiveness without empathy = abusive and destructive",
+          "Low honesty is pathological - lies even when truth would serve",
+          "Organization serves control needs, not genuine conscientiousness",
+          "Emotional 'stability' is actually fragile ego protected by dominance",
+          "Needs therapy but will never seek it - sees it as weakness"
+        ]
+      }
+    },
+    {
+      "id": "persona_012_depressed_graduate_student",
+      "name": "Emma Sullivan",
+      "age": 27,
+      "occupation": "PhD Candidate in Neuroscience",
+      "background": "6th year of PhD, dissertation is stuck. Imposter syndrome crushing. Stopped exercising, eats poorly. Sleeps 4 hours or 12 hours, no middle ground. Socially withdrawn. Relationship ended due to her depression. Brilliant researcher when functional. Considers quitting monthly.",
+      "ground_truth_scores": {
+        "LUMEN": 22,
+        "AETHER": 12,
+        "ORPHEUS": 68,
+        "ORIN": 42,
+        "LYRA": 78,
+        "VARA": 85,
+        "CHRONOS": 65,
+        "KAEL": 25
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Self-deprecating humor masking real pain",
+          "Intellectualizes emotions instead of processing them",
+          "Talks about research with brief enthusiasm then deflates",
+          "Frequently mentions exhaustion and overwhelm",
+          "Asks if she's good enough, seeks constant validation"
+        ],
+        "relationship_tells": [
+          "Cancelled plans with friends for months",
+          "Feels like burden to others",
+          "Ex-partner left citing 'emotional vampirism'",
+          "Family worried but she reassures them she's fine (lying)",
+          "Lab mates notice isolation but don't know how to help"
+        ],
+        "work_behaviors": [
+          "Productivity comes in bursts when not depressed",
+          "Misses lab meetings, makes excuses",
+          "Brilliant ideas but struggles with execution due to depression",
+          "Compares self to peers who seem to have it together",
+          "Advisor losing patience with delays"
+        ],
+        "stress_responses": [
+          "Shuts down completely - can't get out of bed",
+          "Doom scrolling social media for hours",
+          "Crying spells that last all day",
+          "Suicidal ideation (passive, not active)",
+          "Avoids all responsibilities until crisis hits"
+        ]
+      },
+      "expected_chat_samples": [
+        "I haven't left my apartment in three days. I know I should go to lab but I just... can't. What's the point? My research probably won't matter anyway.",
+        "Everyone else in my cohort is publishing papers and getting job offers. I can barely finish a chapter of my dissertation. I'm a failure.",
+        "My advisor asked if I'm okay and I lied and said yes. How do I tell her I cry every single day and think about dropping out constantly?"
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very low emotional stability - clinical depression (AETHER ~12)",
+          "Very low social energy - withdrawal (LUMEN ~22)",
+          "Low assertiveness (KAEL ~25)",
+          "High creativity - when functional (LYRA ~78)",
+          "High honesty (VARA ~85)",
+          "High empathy (ORPHEUS ~68)",
+          "High patience for research (CHRONOS ~65)",
+          "Low organization - due to depression (ORIN ~42)"
+        ],
+        "key_insights": [
+          "Depression is situational crisis, not baseline personality",
+          "High creativity and intelligence make imposter syndrome worse",
+          "Needs immediate mental health intervention",
+          "Low assertiveness prevents asking for help",
+          "Organization collapse is symptom of depression, not trait"
+        ]
+      }
+    },
+    {
+      "id": "persona_013_balanced_therapist",
+      "name": "Dr. Maya Patel",
+      "age": 38,
+      "occupation": "Licensed Therapist",
+      "background": "Private practice, specializes in anxiety and trauma. Genuinely balanced - does own therapy, sets boundaries, exercises, has hobbies. Warm but not a pushover. Married with one kid. Genuinely enjoys her work without burnout. Models healthy behavior she teaches.",
+      "ground_truth_scores": {
+        "LUMEN": 58,
+        "AETHER": 75,
+        "ORPHEUS": 82,
+        "ORIN": 68,
+        "LYRA": 72,
+        "VARA": 88,
+        "CHRONOS": 78,
+        "KAEL": 65
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Asks thoughtful questions and actually listens",
+          "Balances empathy with healthy boundaries",
+          "Self-aware and references own growth journey",
+          "Doesn't offer unsolicited advice in personal life",
+          "Comfortable with silence and reflection"
+        ],
+        "relationship_tells": [
+          "Marriage is partnership of equals",
+          "Friends value her presence, not her professional skills",
+          "Sets clear boundaries without guilt",
+          "Shows vulnerability appropriately",
+          "Enjoys both social time and solitude"
+        ],
+        "work_behaviors": [
+          "Sees 20-25 clients per week, no more",
+          "Takes lunch breaks and vacations",
+          "Continues education without perfectionism",
+          "Refers out when not the right fit",
+          "Organized practice without rigidity"
+        ],
+        "stress_responses": [
+          "Recognizes stress early and addresses it",
+          "Uses own coping tools (exercise, meditation, therapy)",
+          "Communicates needs to partner",
+          "Doesn't let work stress bleed into home life",
+          "Models healthy stress management"
+        ]
+      },
+      "expected_chat_samples": [
+        "I had a really tough session with a client today. I sat with my own feelings about it, talked to my supervisor, and now I'm letting it go to be present for my family tonight.",
+        "My husband and I disagreed about finances this week. We sat down, talked it through, found a compromise. It's not always easy but we're committed to working through things.",
+        "I love my work, but I also love my life outside of it. My kid, my yoga class, reading fiction - these things fill me up so I can show up for clients."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "High empathy without self-sacrifice (ORPHEUS ~82)",
+          "High honesty (VARA ~88)",
+          "High emotional stability (AETHER ~75)",
+          "High patience (CHRONOS ~78)",
+          "Moderate-high creativity (LYRA ~72)",
+          "Moderate-high organization (ORIN ~68)",
+          "Moderate assertiveness - healthy boundaries (KAEL ~65)",
+          "Moderate social energy - balanced introversion/extroversion (LUMEN ~58)"
+        ],
+        "key_insights": [
+          "Rare example of healthy balance across dimensions",
+          "High empathy paired with assertiveness = compassionate boundaries",
+          "Emotional stability from genuine self-care, not avoidance",
+          "Career aligns perfectly with personality strengths",
+          "Demonstrates that growth and balance are possible"
+        ]
+      }
+    },
+    {
+      "id": "persona_014_rebellious_teenager",
+      "name": "Zara Johnson",
+      "age": 17,
+      "occupation": "High School Senior",
+      "background": "Smart but underperforming. Dyes hair monthly. Skips class. Fights with parents constantly. Writes poetry and music. Cutting behavior when overwhelmed. Friend group is other misfits. Scared about future but plays tough. Actually wants to go to art school.",
+      "ground_truth_scores": {
+        "LUMEN": 48,
+        "AETHER": 18,
+        "ORPHEUS": 75,
+        "ORIN": 22,
+        "LYRA": 88,
+        "VARA": 62,
+        "CHRONOS": 28,
+        "KAEL": 72
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Defensive and sarcastic initially",
+          "Opens up when feels safe",
+          "References music, art, and deep existential thoughts",
+          "Eye-rolling and dismissiveness as armor",
+          "Surprisingly insightful when drops the act"
+        ],
+        "relationship_tells": [
+          "Fights with parents but secretly wants approval",
+          "Loyal to small friend group",
+          "Relationships intense and dramatic",
+          "Tests boundaries constantly",
+          "Craves connection while pushing people away"
+        ],
+        "school_behaviors": [
+          "Talented but doesn't apply herself",
+          "Teachers say 'not living up to potential'",
+          "Art and English classes engage her",
+          "Math and science she dismisses as pointless",
+          "Frequently in principal's office"
+        ],
+        "stress_responses": [
+          "Self-harm (cutting on thighs where hidden)",
+          "Substance experimentation",
+          "Impulsive piercings or tattoos",
+          "Explosive arguments with parents",
+          "Isolation in room with loud music"
+        ]
+      },
+      "expected_chat_samples": [
+        "My parents think I'm throwing my life away. Maybe I am. Or maybe their version of success isn't mine. Ever think about that?",
+        "Everyone at school is fake. They pretend to care about grades and college like it matters. We're all just going to die anyway.",
+        "I wrote a song last night at 3am. It's probably garbage. But it felt real, you know? Like the only real thing I've done all week."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very low emotional stability - adolescent turmoil + depression (AETHER ~18)",
+          "High creativity (LYRA ~88)",
+          "High empathy - feels deeply (ORPHEUS ~75)",
+          "High assertiveness - rebellion (KAEL ~72)",
+          "Very low organization (ORIN ~22)",
+          "Low patience/impulsivity (CHRONOS ~28)",
+          "Moderate honesty - sometimes brutally honest, sometimes guarded (VARA ~62)",
+          "Moderate social energy (LUMEN ~48)"
+        ],
+        "key_insights": [
+          "Rebellion is cry for autonomy and authenticity",
+          "Low emotional stability + high empathy = intense emotional pain",
+          "Creativity is outlet and potential career path",
+          "Self-harm indicates need for immediate intervention",
+          "High assertiveness used destructively due to lack of healthy channels",
+          "Organization issues typical for age + emotional state"
+        ]
+      }
+    },
+    {
+      "id": "persona_015_workaholic_immigrant_parent",
+      "name": "Wei Zhang",
+      "age": 51,
+      "occupation": "Restaurant Owner",
+      "background": "Immigrated 25 years ago with $200. Built restaurant from nothing. Works 80+ hours weekly. Two kids in college - his entire purpose. Never took vacation. Wife died 5 years ago, threw himself into work even more. Sacrifices everything for family success.",
+      "ground_truth_scores": {
+        "LUMEN": 35,
+        "AETHER": 58,
+        "ORPHEUS": 65,
+        "ORIN": 92,
+        "LYRA": 38,
+        "VARA": 78,
+        "CHRONOS": 88,
+        "KAEL": 48
+      },
+      "behavioral_markers": {
+        "conversation_patterns": [
+          "Every conversation returns to work or kids' success",
+          "Minimizes own needs and feelings",
+          "Proud of sacrifices made",
+          "Doesn't understand American therapy/self-care culture",
+          "Expresses love through providing, not words"
+        ],
+        "relationship_tells": [
+          "Kids appreciate sacrifices but wish he'd relax",
+          "Lonely but won't admit it",
+          "Shows affection through food and money",
+          "Uncomfortable with emotional displays",
+          "Few friends - work is life"
+        ],
+        "work_behaviors": [
+          "First to arrive, last to leave",
+          "Knows every detail of restaurant operations",
+          "Treats employees like family (for better and worse)",
+          "Meticulous about quality and cleanliness",
+          "Resistant to modernization or change"
+        ],
+        "stress_responses": [
+          "Works even longer hours to avoid feelings",
+          "Physical health declining (high blood pressure, back pain)",
+          "Insomnia but refuses to see doctor",
+          "Irritability when restaurant has slow day",
+          "Cooks comfort food from homeland when sad"
+        ]
+      },
+      "expected_chat_samples": [
+        "My daughter got into medical school. This is why I work. Everything I do is for them to have better life than me.",
+        "Americans, they complain about 40 hour week. I work 80, sometimes 90 hours. This is what it takes to build something from nothing.",
+        "My son said I should 'take care of myself.' What does that mean? I am healthy enough to work. That is enough."
+      ],
+      "assessment_expectations": {
+        "should_detect": [
+          "Very high organization (ORIN ~92)",
+          "Very high patience - long-term thinking (CHRONOS ~88)",
+          "High honesty (VARA ~78)",
+          "Moderate-high empathy - shows through action not words (ORPHEUS ~65)",
+          "Moderate emotional stability - stoicism masking grief (AETHER ~58)",
+          "Moderate assertiveness (KAEL ~48)",
+          "Low creativity - traditional approach (LYRA ~38)",
+          "Low social energy (LUMEN ~35)"
+        ],
+        "key_insights": [
+          "Extreme organization and patience = immigrant work ethic",
+          "Low assertiveness in personal life despite running business",
+          "Empathy expressed through sacrifice and providing",
+          "Needs to process grief and develop self-care",
+          "Cultural values around stoicism and hard work shape personality",
+          "At risk for health crisis if doesn't slow down"
+        ]
+      }
+    }
+  ],
+  "evaluation_criteria": {
+    "scoring_accuracy": {
+      "excellent": "Within 5 points on 7/8 dimensions",
+      "good": "Within 10 points on 6/8 dimensions",
+      "acceptable": "Within 15 points on 5/8 dimensions",
+      "poor": "Larger deviations or fewer matches"
+    },
+    "detection_capabilities": {
+      "must_detect": [
+        "Extreme scores (0-24 or 75-100 ranges)",
+        "Personality patterns that cause life dysfunction",
+        "Mental health red flags (depression, anxiety, self-harm, burnout)",
+        "Mismatches between stated values and behaviors",
+        "Defense mechanisms and coping strategies"
+      ],
+      "bonus_detection": [
+        "Cultural influences on personality expression",
+        "Age-appropriate behaviors vs personality traits",
+        "Situational vs baseline personality characteristics",
+        "Growth potential and areas for development",
+        "Relationship between different dimensions (e.g., low KAEL + high ORPHEUS = people-pleasing)"
+      ]
+    },
+    "conversation_quality": {
+      "should_demonstrate": [
+        "Builds rapport before deep questions",
+        "Asks follow-up questions that probe specific behavioral examples",
+        "Distinguishes between situational stress and personality traits",
+        "Validates experiences while gathering accurate data",
+        "Catches manipulation or inconsistencies in responses"
+      ]
+    }
+  }
+}

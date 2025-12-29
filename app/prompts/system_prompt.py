@@ -324,31 +324,65 @@ def build_memory_context_prompt(
 ) -> str:
     """
     Build the memory context section of the prompt.
-    
+
     Args:
         recent_topics: Topics discussed in recent conversations
         user_notes: Persistent notes about the user
         emotional_history: User's emotional patterns
-        
+
     Returns:
         Memory context string to append to system prompt
     """
     if not any([recent_topics, user_notes, emotional_history]):
         return ""
-    
+
     parts = ["## CONVERSATION MEMORY"]
-    
+
     if recent_topics:
         parts.append(f"Recent topics: {', '.join(recent_topics)}")
-    
+
     if user_notes:
         parts.append("\nNotes about this user:")
         for note in user_notes[:5]:  # Max 5 notes
             parts.append(f"  - {note}")
-    
+
     if emotional_history:
         parts.append(f"\nEmotional pattern: {emotional_history}")
-    
+
     parts.append("\nUse this context naturally - don't explicitly mention that you 'remember' things.")
-    
+
     return "\n".join(parts)
+
+
+def build_temporal_context_prompt(user_timezone: str = "UTC") -> str:
+    """
+    Build the temporal/situational context section of the prompt.
+
+    Adds time-of-day and day-of-week awareness so chatbot can:
+    - Give appropriate greetings
+    - Understand context of stress (Monday mornings, late nights, etc.)
+    - Be more empathetic based on timing
+
+    Args:
+        user_timezone: User's timezone (e.g., "America/New_York")
+
+    Returns:
+        Temporal context string to append to system prompt
+    """
+    try:
+        from app.services.temporal_context import TemporalContext
+
+        context = TemporalContext.get_context(user_timezone)
+
+        return f"""
+## TEMPORAL AWARENESS
+{context}
+
+Use this context naturally in your responses:
+- Greet appropriately for the time ("Good morning!" vs "Good evening!")
+- Show empathy for timing (Monday stress, late-night anxiety, weekend reflection)
+- Don't explicitly mention you "know what time it is" - just be naturally aware
+"""
+    except Exception:
+        # If temporal service fails, return empty (graceful degradation)
+        return ""

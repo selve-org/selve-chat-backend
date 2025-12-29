@@ -310,6 +310,7 @@ async def chat_stream(
                     clerk_user_id=chat_request.clerk_user_id,
                     session_id=chat_request.session_id,
                     client_ip=client_ip,
+                    user_timezone=chat_request.user_timezone or "UTC",  # User's timezone for temporal awareness
                     emit_status=True,
                     regeneration_type=chat_request.regeneration_type,  # NEW: Pass regeneration context
                 ):

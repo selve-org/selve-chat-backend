@@ -14,11 +14,82 @@ The chatbot MUST load this before every response to have full context.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def format_relative_time(timestamp: datetime) -> str:
+    """
+    Convert a timestamp to human-readable relative time.
+
+    Examples: "2 hours ago", "3 days ago", "last week", "2 months ago"
+    """
+    now = datetime.utcnow()
+    delta = now - timestamp
+
+    seconds = delta.total_seconds()
+
+    if seconds < 3600:  # Less than 1 hour
+        minutes = int(seconds / 60)
+        if minutes == 0:
+            return "just now"
+        elif minutes == 1:
+            return "1 minute ago"
+        else:
+            return f"{minutes} minutes ago"
+
+    elif seconds < 86400:  # Less than 1 day
+        hours = int(seconds / 3600)
+        if hours == 1:
+            return "1 hour ago"
+        else:
+            return f"{hours} hours ago"
+
+    elif seconds < 604800:  # Less than 1 week
+        days = int(seconds / 86400)
+        if days == 1:
+            return "yesterday"
+        elif days < 7:
+            return f"{days} days ago"
+        else:
+            return "last week"
+
+    elif seconds < 2592000:  # Less than 30 days
+        weeks = int(seconds / 604800)
+        if weeks == 1:
+            return "last week"
+        elif weeks == 2:
+            return "2 weeks ago"
+        elif weeks == 3:
+            return "3 weeks ago"
+        else:
+            return "last month"
+
+    elif seconds < 7776000:  # Less than 90 days (3 months)
+        months = int(seconds / 2592000)
+        if months == 1:
+            return "last month"
+        else:
+            return f"{months} months ago"
+
+    elif seconds < 31536000:  # Less than 1 year
+        months = int(seconds / 2592000)
+        if months < 4:
+            return "a few months ago"
+        elif months < 7:
+            return "about half a year ago"
+        else:
+            return "several months ago"
+
+    else:  # More than a year
+        years = int(seconds / 31536000)
+        if years == 1:
+            return "last year"
+        else:
+            return f"{years} years ago"
 
 
 # =============================================================================
@@ -245,21 +316,25 @@ class UserState:
         if important_notes:
             parts.append("")
             parts.append("### NOTES ABOUT USER ###")
-            parts.append("(Important observations from past conversations)")
-            
+            parts.append("(Important observations from past conversations - use temporal context naturally)")
+
             for note in important_notes[:5]:  # Show max 5
+                when = format_relative_time(note.created_at)
                 if note.category == "security":
-                    parts.append(f"  ⚠️ [{note.category.upper()}] {note.content}")
+                    parts.append(f"  ⚠️ [{note.category.upper()}] {note.content} (noted {when})")
                 else:
-                    parts.append(f"  • [{note.category}] {note.content}")
+                    parts.append(f"  • [{note.category}] {note.content} (observed {when})")
         
         # === Recent Conversation Memories ===
         if self.recent_memories:
             parts.append("")
             parts.append("### RECENT CONVERSATION HISTORY ###")
-            
+            parts.append("(Use these temporal references naturally: 'Remember when you mentioned X last week...')")
+
             for mem in self.recent_memories[:3]:
-                parts.append(f"  📝 {mem.title}")
+                # Add temporal context - when this conversation happened
+                when = format_relative_time(mem.timestamp)
+                parts.append(f"  📝 {mem.title} ({when})")
                 parts.append(f"     Summary: {mem.summary[:200]}...")
                 if mem.key_insights:
                     parts.append(f"     Insights: {', '.join(mem.key_insights[:3])}")

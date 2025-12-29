@@ -207,6 +207,7 @@ class AgenticChatService:
         session_id: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         client_ip: Optional[str] = None,
+        user_timezone: str = "UTC",
         emit_status: bool = True,
         regeneration_type: Optional[str] = None,
     ) -> AsyncGenerator[Union[str, Dict[str, Any]], None]:
@@ -221,6 +222,7 @@ class AgenticChatService:
             session_id: Session ID
             conversation_history: Previous messages
             client_ip: Client IP for geo/security
+            user_timezone: User's timezone (e.g., "America/New_York")
             emit_status: Whether to emit status events
             regeneration_type: "regenerate" | "edit" | None
 
@@ -308,8 +310,26 @@ class AgenticChatService:
                                     details={"security_blocked": True},
                                 ).to_dict()
 
-                            # Return safe canned response
-                            canned = "I'm here to help you understand your personality! What would you like to explore?"
+                            # HONEST MODE: Direct response when manipulation detected
+                            # Be straight with users about what we detected
+                            if security_result.threat_level.value in ["high", "critical"]:
+                                canned = (
+                                    "I notice you're trying to manipulate my responses. "
+                                    "I'm designed to have honest conversations about personality. "
+                                    "Want to try that instead?"
+                                )
+                            elif security_result.threat_level.value == "medium":
+                                canned = (
+                                    "Hey, I'm picking up on something unusual in your message. "
+                                    "I work best when we're having a genuine conversation. "
+                                    "What's really on your mind?"
+                                )
+                            else:
+                                # Low threat - be gentler
+                                canned = (
+                                    "I'm here to help you understand your personality through "
+                                    "honest conversation. What would you like to explore?"
+                                )
 
                             # Update Langfuse generation for security block
                             generation.update(
@@ -373,8 +393,16 @@ class AgenticChatService:
                         user_intent = "unknown"
                         stream_metadata = None  # Capture metadata for Langfuse
 
-                        # Add regeneration context to system prompt if applicable
+                        # Build dynamic system prompt with temporal awareness
                         system_prompt = self.system_prompt
+
+                        # Add temporal/situational context (uses user's actual timezone!)
+                        from app.prompts.system_prompt import build_temporal_context_prompt
+                        temporal_context = build_temporal_context_prompt(user_timezone=user_timezone)
+                        if temporal_context:
+                            system_prompt += "\n" + temporal_context
+
+                        # Add regeneration context if applicable
                         if regeneration_type == "regenerate":
                             system_prompt += "\n\nNOTE: The user requested a regeneration of the previous response. Provide a different perspective, alternative approach, or additional insights that weren't covered in the previous response. Vary your communication style and examples."
 

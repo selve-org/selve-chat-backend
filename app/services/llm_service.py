@@ -105,7 +105,7 @@ class LLMService:
         if self.provider == "anthropic":
             self.model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
         else:
-            self.model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
+            self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     def _with_retry(self, func: Callable[[], T], operation: str = "LLM call") -> T:
         """
