@@ -21,10 +21,11 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-from app.routers import chat, compression, ingestion, sessions, users
+from app.routers import chat, compression, ingestion, sessions, users, crawler
 from app.db import connect_db, disconnect_db
 from app.logging_config import setup_logging
 from app.middleware.request_logging import RequestLoggingMiddleware
+from app.services.crawler_scheduler import start_crawler_scheduler, stop_crawler_scheduler
 
 # Setup production logging with PII scrubbing and file rotation
 setup_logging(app_name="selve-chat-backend")
@@ -111,10 +112,25 @@ async def lifespan(app: FastAPI):
 
     await connect_db()
     logger.info("✅ Database connected")
+
+    # Start automated web crawler scheduler
+    try:
+        start_crawler_scheduler()
+        logger.info("✅ Web crawler scheduler started (runs daily at 3AM UTC)")
+    except Exception as e:
+        logger.warning(f"Failed to start crawler scheduler: {e}")
+
     logger.info(f"📡 API running on port {os.getenv('PORT', '8000')}")
     yield
     # Shutdown
     logger.info("👋 Shutting down SELVE Chatbot Backend...")
+
+    # Stop crawler scheduler
+    try:
+        stop_crawler_scheduler()
+        logger.info("✅ Web crawler scheduler stopped")
+    except Exception as e:
+        logger.warning(f"Failed to stop crawler scheduler: {e}")
 
     # Flush Langfuse traces before shutdown
     try:
@@ -181,6 +197,7 @@ app.include_router(compression.router)
 app.include_router(ingestion.router)
 app.include_router(sessions.router)
 app.include_router(users.router)
+app.include_router(crawler.router)
 
 
 @app.get("/")

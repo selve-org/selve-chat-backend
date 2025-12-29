@@ -161,6 +161,8 @@ class ExecutionResult:
     web_sources: List[Dict[str, str]] = field(default_factory=list)
     youtube_context: Optional[str] = None
     youtube_sources: List[Dict[str, str]] = field(default_factory=list)
+    selve_web_context: Optional[str] = None
+    selve_web_sources: List[Dict[str, str]] = field(default_factory=list)
     personality_insights: Optional[str] = None
     relevant_memories: List[Any] = field(default_factory=list)  # MemorySearchResult objects
     errors: List[str] = field(default_factory=list)
@@ -693,6 +695,7 @@ class ThinkingEngine:
                 rag_context=execution_result.rag_context,
                 web_research=execution_result.web_research,
                 youtube_context=execution_result.youtube_context,
+                selve_web_context=execution_result.selve_web_context,
             )
             
             # Stream response
@@ -808,6 +811,20 @@ class ThinkingEngine:
                 parameters={},
             ))
 
+        # SELVE web content search for product information
+        # Search when asking about how SELVE works, features, privacy, terms
+        selve_keywords = [
+            "selve", "how does selve", "how selve works", "features", "privacy",
+            "terms", "conditions", "policy", "works", "assessment", "test",
+            "dimensions", "profile", "results", "score", "framework"
+        ]
+        if any(keyword in message_lower for keyword in selve_keywords):
+            plan.append(PlanStep(
+                action="selve_web_search",
+                priority=2,  # Same priority as RAG and YouTube
+                parameters={},
+            ))
+
         # Web research if needed (future)
         if analysis.needs_web_research and ThinkingConfig.WEB_SEARCH_ENABLED:
             plan.append(PlanStep(
@@ -862,6 +879,11 @@ class ThinkingEngine:
                     youtube_result = await self._execute_youtube_search(message)
                     result.youtube_context = youtube_result.get("context")
                     result.youtube_sources = youtube_result.get("sources", [])
+
+                elif step.action == "selve_web_search":
+                    selve_web_result = await self._execute_selve_web_search(message)
+                    result.selve_web_context = selve_web_result.get("context")
+                    result.selve_web_sources = selve_web_result.get("sources", [])
 
                 elif step.action == "web_search":
                     web_result = await self._execute_web_search(message)
@@ -1240,6 +1262,47 @@ class ThinkingEngine:
             self.logger.warning(f"YouTube transcript search failed: {e}")
             return {"context": None, "sources": []}
 
+    async def _execute_selve_web_search(
+        self,
+        message: str,
+    ) -> Dict[str, Any]:
+        """
+        Search SELVE web content for product information.
+
+        This searches indexed content from selve.me including:
+        - How it works
+        - Features
+        - Privacy policy
+        - Terms & conditions
+
+        Args:
+            message: User's query
+
+        Returns:
+            Dict with context and sources
+        """
+        try:
+            from app.tools.selve_web_tool import search_selve_web
+
+            # Search SELVE web content
+            result = await search_selve_web(
+                query=message,
+                top_k=3,
+            )
+
+            if result.get("context"):
+                self.logger.info(f"Found SELVE web content from {len(result.get('pages', []))} pages")
+                return {
+                    "context": result["context"],
+                    "sources": result.get("sources", []),
+                }
+
+            return {"context": None, "sources": []}
+
+        except Exception as e:
+            self.logger.warning(f"SELVE web content search failed: {e}")
+            return {"context": None, "sources": []}
+
     # =========================================================================
     # Prompt Building
     # =========================================================================
@@ -1342,6 +1405,7 @@ class ThinkingEngine:
         rag_context: Optional[str],
         web_research: Optional[str] = None,
         youtube_context: Optional[str] = None,
+        selve_web_context: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """Build message list for LLM."""
         messages = [{"role": "system", "content": system_prompt}]
@@ -1361,6 +1425,9 @@ class ThinkingEngine:
 
         if rag_context:
             context_parts.append(f"<knowledge_context>\n{rag_context}\n</knowledge_context>")
+
+        if selve_web_context:
+            context_parts.append(f"<selve_content>\n{selve_web_context}\n</selve_content>")
 
         if youtube_context:
             context_parts.append(f"<youtube_transcripts>\n{youtube_context}\n</youtube_transcripts>")
@@ -1450,6 +1517,7 @@ class ThinkingEngine:
                 rag_context=execution_result.rag_context,
                 web_research=execution_result.web_research,
                 youtube_context=execution_result.youtube_context,
+                selve_web_context=execution_result.selve_web_context,
             )
 
             # Non-streaming generation
