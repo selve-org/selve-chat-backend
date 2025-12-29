@@ -320,6 +320,13 @@ async def chat_stream(
                             # Forward to frontend
                             yield f"data: {json.dumps(event)}\n\n"
                             continue
+
+                        # Send sources/citations separately when they're available
+                        if event.get('details', {}).get('sources'):
+                            sources = event['details']['sources']
+                            if sources:  # Only send if there are actual sources
+                                yield f"data: {json.dumps({'type': 'citations', 'citations': sources})}\n\n"
+
                         yield f"data: {json.dumps(event)}\n\n"
                     else:
                         response_container.content += event

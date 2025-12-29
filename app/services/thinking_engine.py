@@ -718,12 +718,58 @@ class ThinkingEngine:
             steps.append(step)
             
             # === COMPLETE ===
+            # Aggregate all sources for frontend display
+            all_sources = []
+
+            # Add RAG sources (knowledge base)
+            for source in execution_result.rag_sources:
+                all_sources.append({
+                    "title": source.get("title", "SELVE Knowledge"),
+                    "source": "rag",
+                    "type": "rag",
+                    "section": source.get("section"),
+                    "score": source.get("score"),
+                })
+
+            # Add SELVE web sources
+            for source in execution_result.selve_web_sources:
+                all_sources.append({
+                    "title": source.get("title", "SELVE Page"),
+                    "source": "selve_web",
+                    "type": "selve_web",
+                    "url": source.get("url"),
+                    "category": source.get("category"),
+                    "relevance": source.get("relevance"),
+                })
+
+            # Add YouTube sources
+            for source in execution_result.youtube_sources:
+                all_sources.append({
+                    "title": source.get("title", "YouTube Video"),
+                    "source": "youtube",
+                    "type": "youtube",
+                    "url": source.get("url"),
+                    "channel": source.get("channel"),
+                    "video_id": source.get("video_id"),
+                    "relevance": source.get("relevance"),
+                })
+
+            # Add web search sources
+            for source in execution_result.web_sources:
+                all_sources.append({
+                    "title": source.get("title", "Web Source"),
+                    "source": "web",
+                    "type": "web",
+                    "url": source.get("url"),
+                    "relevance": source.get("relevance"),
+                })
+
             if emit_status:
                 yield ThinkingStatus(
                     phase=ThinkingPhase.COMPLETE,
                     message="Response complete",
                     details={
-                        "sources": execution_result.rag_sources,
+                        "sources": all_sources,
                         "intent": analysis.intent.value,
                     },
                 ).to_dict()
