@@ -840,6 +840,22 @@ class ThinkingEngine:
                 },
             ))
 
+        # YouTube LIVE FETCH for specific video URLs
+        # Triggers when user provides a YouTube URL or asks to fetch a specific video
+        import re
+        youtube_url_pattern = r"(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})"
+        youtube_url_match = re.search(youtube_url_pattern, message)
+        fetch_keywords = ["fetch", "get", "retrieve", "analyze this video", "what does this video"]
+
+        if youtube_url_match or any(keyword in message.lower() for keyword in fetch_keywords if "youtube" in message.lower() or "video" in message.lower()):
+            # Extract video URL/ID if present
+            video_url_or_id = youtube_url_match.group(0) if youtube_url_match else None
+            plan.append(PlanStep(
+                action="youtube_live_fetch",
+                priority=1,  # High priority - user explicitly requesting specific content
+                parameters={"url_or_id": video_url_or_id or message},
+            ))
+
         # YouTube transcript search for psychology/educational content
         # Search when asking about psychological concepts, behaviors, or educational topics
         youtube_keywords = [
@@ -920,6 +936,14 @@ class ThinkingEngine:
                 elif step.action == "fetch_personality":
                     # Personality context is already in user_state
                     pass
+
+                elif step.action == "youtube_live_fetch":
+                    # Fetch, validate, and ingest a specific YouTube video
+                    youtube_fetch_result = await self._execute_youtube_live_fetch(
+                        step.parameters.get("url_or_id", message)
+                    )
+                    result.youtube_context = youtube_fetch_result.get("context")
+                    result.youtube_sources = youtube_fetch_result.get("sources", [])
 
                 elif step.action == "youtube_search":
                     youtube_result = await self._execute_youtube_search(message)
@@ -1269,6 +1293,86 @@ class ThinkingEngine:
         ])
 
         return "\n".join(parts)
+
+    async def _execute_youtube_live_fetch(
+        self,
+        url_or_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Fetch, validate, and ingest a specific YouTube video transcript.
+
+        This implements the SELVE "initiation" process:
+        1. Fetch raw transcript from youtube-transcript.io
+        2. Validate content through SELVE framework (cleanse & purify)
+        3. Ingest approved content into knowledge base
+        4. Return validated content for immediate use
+
+        Returns:
+            Dict with context (transcript text) and sources
+        """
+        try:
+            from app.tools.youtube_live_fetch_tool import fetch_youtube_transcript
+
+            self.logger.info(f"📺 Fetching YouTube video: {url_or_id}")
+
+            # Fetch, validate, and ingest
+            result = await fetch_youtube_transcript(
+                url_or_id=url_or_id,
+                auto_ingest=True,
+            )
+
+            if result.get("error"):
+                self.logger.warning(f"YouTube fetch failed: {result.get('error')}")
+                return {"context": None, "sources": []}
+
+            # Format context from fetched transcript
+            title = result.get("title", "Unknown Video")
+            channel = result.get("channel", "Unknown Channel")
+            validation_status = result.get("validation_status", "unknown")
+            ingested = result.get("ingested", False)
+            chunks_created = result.get("chunks_created", 0)
+            transcript_text = result.get("transcript_text", "")
+
+            # Create context string
+            context_parts = [
+                f"YouTube Video: {title}",
+                f"Channel: {channel}",
+                f"Validation Status: {validation_status.upper()}",
+            ]
+
+            if ingested:
+                context_parts.append(f"✅ Successfully initiated into SELVE ({chunks_created} chunks created)")
+            else:
+                context_parts.append("⚠️ Content not ingested (validation issues)")
+
+            context_parts.append("\n" + (transcript_text[:2000] + "..." if len(transcript_text) > 2000 else transcript_text))
+
+            context = "\n".join(context_parts)
+
+            # Create source entry
+            video_id = result.get("video_id", "")
+            sources = [{
+                "title": title,
+                "url": f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
+                "channel": channel,
+                "video_id": video_id,
+                "validation_status": validation_status,
+                "ingested": ingested,
+            }]
+
+            self.logger.info(
+                f"✅ YouTube fetch complete: {title} | "
+                f"Status: {validation_status} | Ingested: {ingested}"
+            )
+
+            return {
+                "context": context,
+                "sources": sources,
+            }
+
+        except Exception as e:
+            self.logger.error(f"YouTube live fetch failed: {e}")
+            return {"context": None, "sources": []}
 
     async def _execute_youtube_search(
         self,

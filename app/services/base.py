@@ -41,6 +41,10 @@ class Config:
     QDRANT_API_KEY: str = os.getenv("QDRANT_API_KEY", "")  # For cloud deployments
     QDRANT_COLLECTION_NAME: str = os.getenv("QDRANT_COLLECTION_NAME", "selve_knowledge")
 
+    # YouTube Transcript API (youtube-transcript.io)
+    YOUTUBE_TRANSCRIPT_API_TOKEN: str = os.getenv("YOUTUBE_TRANSCRIPT_API_TOKEN", "")
+    YOUTUBE_LIVE_FETCH_ENABLED: bool = os.getenv("YOUTUBE_LIVE_FETCH_ENABLED", "false").lower() == "true"
+
     # Timeouts
     RAG_TIMEOUT_SECONDS: float = float(os.getenv("RAG_TIMEOUT_SECONDS", "5.0"))
     MEMORY_TIMEOUT_SECONDS: float = float(os.getenv("MEMORY_TIMEOUT_SECONDS", "3.0"))
