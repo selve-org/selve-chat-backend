@@ -46,6 +46,34 @@ class WebCrawlerService:
     BASE_URL = "https://selve.me"
     SITEMAP_URL = f"{BASE_URL}/sitemap.xml"
 
+    # SELVE pages to crawl (fallback when sitemap not available)
+    # selve.me is a client-side rendered Next.js app, so we can't discover pages dynamically
+    SELVE_PAGES = [
+        # Main pages
+        "https://selve.me",
+        "https://selve.me/assessment",
+        "https://selve.me/pricing",
+        "https://selve.me/terms",
+        "https://selve.me/privacy",
+        "https://selve.me/about",
+        "https://selve.me/how-it-works",
+        "https://selve.me/blog",
+        "https://selve.me/friend",
+
+        # Dimension blog posts
+        "https://selve.me/posts/dimensions/lumen",
+        "https://selve.me/posts/dimensions/aether",
+        "https://selve.me/posts/dimensions/orpheus",
+        "https://selve.me/posts/dimensions/vara",
+        "https://selve.me/posts/dimensions/chronos",
+        "https://selve.me/posts/dimensions/kael",
+        "https://selve.me/posts/dimensions/orin",
+        "https://selve.me/posts/dimensions/lyra",
+
+        # Chat interface
+        "https://chat.selve.me",
+    ]
+
     # Crawl settings
     CHUNK_SIZE = 600  # words
     CHUNK_OVERLAP = 75  # words
@@ -518,8 +546,14 @@ class WebCrawlerService:
         # Step 1: Discover URLs from sitemap
         sitemap_urls = await self.discover_sitemap_urls()
 
+        # Use sitemap URLs if available, otherwise use hardcoded list
+        # Note: selve.me is a client-side rendered Next.js app without a sitemap
+        urls_to_crawl = sitemap_urls if sitemap_urls else self.SELVE_PAGES
+
+        self.logger.info(f"Crawling {len(urls_to_crawl)} URLs (source: {'sitemap' if sitemap_urls else 'hardcoded list'})")
+
         # Step 2: Recursively crawl pages
-        pages = await self.crawl_recursive(sitemap_urls or [self.BASE_URL])
+        pages = await self.crawl_recursive(urls_to_crawl)
 
         # Step 3: Update vector database (only changed content)
         await self.update_vector_database(pages)
