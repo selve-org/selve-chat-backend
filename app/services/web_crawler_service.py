@@ -495,15 +495,25 @@ class WebCrawlerService:
         # Ensure collection exists
         try:
             self.qdrant.get_collection(self.COLLECTION_NAME)
-        except Exception:
-            self.logger.info(f"Creating collection '{self.COLLECTION_NAME}'")
-            self.qdrant.create_collection(
-                collection_name=self.COLLECTION_NAME,
-                vectors_config=VectorParams(
-                    size=self.EMBEDDING_DIMENSIONS,
-                    distance=Distance.COSINE,
-                ),
-            )
+            self.logger.info(f"Collection '{self.COLLECTION_NAME}' already exists")
+        except Exception as e:
+            # Collection doesn't exist - create it
+            try:
+                self.logger.info(f"Creating collection '{self.COLLECTION_NAME}'")
+                self.qdrant.create_collection(
+                    collection_name=self.COLLECTION_NAME,
+                    vectors_config=VectorParams(
+                        size=self.EMBEDDING_DIMENSIONS,
+                        distance=Distance.COSINE,
+                    ),
+                )
+                self.logger.info(f"✅ Created collection '{self.COLLECTION_NAME}'")
+            except Exception as create_error:
+                # Collection might have been created by another process (race condition)
+                if "already exists" in str(create_error).lower():
+                    self.logger.info(f"Collection '{self.COLLECTION_NAME}' was created by another process")
+                else:
+                    raise create_error
 
         # Step 1: Discover URLs from sitemap
         sitemap_urls = await self.discover_sitemap_urls()
