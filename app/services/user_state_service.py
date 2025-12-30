@@ -234,6 +234,7 @@ class UserState:
     archetype: Optional[str] = None
     profile_pattern: Optional[str] = None
     narrative_summary: Optional[str] = None
+    full_narrative: Optional[Dict[str, Any]] = None  # Complete narrative JSON with detailed insights
     assessment_completed_at: Optional[datetime] = None
     
     # Friend Assessments
@@ -283,15 +284,40 @@ class UserState:
             parts.append("   DO NOT repeatedly ask if they have scores - they DON'T.")
             parts.append("   Gently encourage taking the assessment when relevant.")
         
+        # === SELVE Profile & Narrative ===
+        if self.full_narrative:
+            parts.append("")
+            parts.append("### COMPLETE PERSONALITY NARRATIVE ###")
+            parts.append("The user's full assessment results:")
+            parts.append("")
+
+            # Include key narrative sections
+            if isinstance(self.full_narrative, dict):
+                # Overview/Summary
+                if "overview" in self.full_narrative:
+                    parts.append(f"OVERVIEW: {self.full_narrative['overview']}")
+                    parts.append("")
+                elif "summary" in self.full_narrative:
+                    parts.append(f"SUMMARY: {self.full_narrative['summary']}")
+                    parts.append("")
+
+                # Core insights
+                for key in ["core_traits", "strengths", "growth_areas", "communication_style",
+                           "decision_making", "relationships", "career_insights", "life_philosophy"]:
+                    if key in self.full_narrative and self.full_narrative[key]:
+                        formatted_key = key.replace("_", " ").title()
+                        parts.append(f"{formatted_key}: {self.full_narrative[key]}")
+                        parts.append("")
+
         # === SELVE Scores ===
         if self.scores:
             parts.append("")
             parts.append("### SELVE SCORES ###")
             parts.append("ALL 8 DIMENSIONS (0 = not yet assessed):")
-            
+
             # Get all scores sorted by value
             all_scores = sorted(self.scores.to_dict().items(), key=lambda x: x[1], reverse=True)
-            
+
             for dim, score in all_scores:
                 if score == 0:
                     parts.append(f"  {dim}: {int(score)}/100 (not yet assessed)")
@@ -479,12 +505,17 @@ class UserStateService:
                 state.profile_pattern = assessment.profilePattern
                 state.assessment_completed_at = assessment.createdAt
                 
-                # Extract narrative summary if available
+                # Extract full narrative if available
                 if assessment.narrative and isinstance(assessment.narrative, dict):
-                    state.narrative_summary = (
-                        assessment.narrative.get("summary") or 
-                        assessment.narrative.get("overview")
-                    )
+                    # Store the full narrative JSON for comprehensive context
+                    state.narrative_summary = assessment.narrative.get("summary") or assessment.narrative.get("overview")
+
+                    # Store full narrative for detailed personality description
+                    # This allows the chatbot to reference specific insights about the user
+                    if not hasattr(state, 'full_narrative'):
+                        state.full_narrative = assessment.narrative
+                    else:
+                        state.full_narrative = assessment.narrative
             else:
                 state.has_assessment = False
                 state.assessment_status = AssessmentStatus.NOT_TAKEN
