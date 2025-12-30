@@ -45,3 +45,4 @@ sentry-sdk[fastapi]==1.40.0
 
 # Optional: For development
 pytest==7.4.4
+playwright==1.57.0

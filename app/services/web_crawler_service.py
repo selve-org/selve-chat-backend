@@ -90,6 +90,8 @@ class WebCrawlerService:
         self.openai = OpenAI(api_key=Config.OPENAI_API_KEY)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.session: Optional[aiohttp.ClientSession] = None
+        self.playwright_browser = None
+        self.playwright_context = None
 
         # Track crawled URLs and content hashes
         self.crawled_urls: Set[str] = set()
@@ -98,12 +100,32 @@ class WebCrawlerService:
     async def __aenter__(self):
         """Async context manager entry."""
         self.session = aiohttp.ClientSession()
+
+        # Initialize Playwright for JavaScript rendering
+        try:
+            from playwright.async_api import async_playwright
+            self.playwright = await async_playwright().start()
+            self.playwright_browser = await self.playwright.chromium.launch(headless=True)
+            self.playwright_context = await self.playwright_browser.new_context()
+            self.logger.info("✅ Playwright initialized for JavaScript rendering")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize Playwright: {e}")
+            self.playwright = None
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         if self.session:
             await self.session.close()
+
+        # Close Playwright
+        if self.playwright_context:
+            await self.playwright_context.close()
+        if self.playwright_browser:
+            await self.playwright_browser.close()
+        if self.playwright:
+            await self.playwright.stop()
 
     def _compute_content_hash(self, content: str) -> str:
         """Compute SHA-256 hash of content for change detection."""
@@ -130,6 +152,50 @@ class WebCrawlerService:
             return False
 
         return True
+
+    async def _crawl_with_playwright(self, url: str) -> str:
+        """
+        Crawl page using Playwright for JavaScript rendering.
+
+        Args:
+            url: URL to crawl
+
+        Returns:
+            Extracted text content
+        """
+        try:
+            page = await self.playwright_context.new_page()
+
+            # Navigate and wait for page to load
+            await page.goto(url, wait_until="networkidle", timeout=15000)
+
+            # Wait a bit more for dynamic content
+            await page.wait_for_timeout(2000)
+
+            # Extract text from main content areas
+            # Try multiple selectors to handle different layouts
+            selectors = ['main', 'article', '[role="main"]', 'body']
+
+            text = ""
+            for selector in selectors:
+                element = await page.query_selector(selector)
+                if element:
+                    # Get inner text (rendered text, not HTML)
+                    text = await element.inner_text()
+                    if text and len(text) > 100:
+                        break
+
+            await page.close()
+
+            # Clean up whitespace
+            text = ' '.join(text.split())
+
+            self.logger.info(f"Playwright extracted {len(text)} chars from {url}")
+            return text
+
+        except Exception as e:
+            self.logger.error(f"Playwright crawl failed for {url}: {e}")
+            return ""
 
     async def discover_sitemap_urls(self) -> List[str]:
         """Discover URLs from sitemap.xml."""
@@ -224,7 +290,12 @@ class WebCrawlerService:
                 # Clean up whitespace
                 text = ' '.join(text.split())
 
-                if len(text) < 50:  # Skip pages with too little content
+                # If content is insufficient and Playwright is available, try JavaScript rendering
+                if len(text) < 50 and self.playwright_browser:
+                    self.logger.info(f"Regular fetch returned {len(text)} chars for {url}, trying Playwright...")
+                    text = await self._crawl_with_playwright(url)
+
+                if len(text) < 50:  # Still insufficient after Playwright attempt
                     self.logger.info(f"Skipping {url} - insufficient content ({len(text)} chars)")
                     return None
 
