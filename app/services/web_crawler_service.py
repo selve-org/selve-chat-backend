@@ -61,14 +61,14 @@ class WebCrawlerService:
         "https://selve.me/friend",
 
         # Dimension blog posts
-        "https://selve.me/posts/dimensions/lumen",
-        "https://selve.me/posts/dimensions/aether",
-        "https://selve.me/posts/dimensions/orpheus",
-        "https://selve.me/posts/dimensions/vara",
-        "https://selve.me/posts/dimensions/chronos",
-        "https://selve.me/posts/dimensions/kael",
-        "https://selve.me/posts/dimensions/orin",
-        "https://selve.me/posts/dimensions/lyra",
+        "https://selve.me/blog/dimensions/lumen",
+        "https://selve.me/blog/dimensions/aether",
+        "https://selve.me/blog/dimensions/orpheus",
+        "https://selve.me/blog/dimensions/vara",
+        "https://selve.me/blog/dimensions/chronos",
+        "https://selve.me/blog/dimensions/kael",
+        "https://selve.me/blog/dimensions/orin",
+        "https://selve.me/blog/dimensions/lyra",
 
         # Chat interface
         "https://chat.selve.me",
