@@ -2,7 +2,7 @@
 Usage Service - Manages user usage tracking and limits for subscription tiers
 """
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from app.db import db
 
@@ -293,12 +293,21 @@ class UsageService:
         Returns:
             True if reset occurred, False otherwise
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         period_start = user.currentPeriodStart
-        period_end = user.currentPeriodEnd or (period_start + timedelta(hours=24))
+
+        # Ensure period_start is timezone-aware
+        if period_start and period_start.tzinfo is None:
+            period_start = period_start.replace(tzinfo=timezone.utc)
+
+        period_end = user.currentPeriodEnd
+        if period_end and period_end.tzinfo is None:
+            period_end = period_end.replace(tzinfo=timezone.utc)
+        elif not period_end and period_start:
+            period_end = period_start + timedelta(hours=24)
 
         # Check if period has expired
-        if now >= period_end:
+        if period_end and now >= period_end:
             logger.info(f"Resetting usage for user {user.clerkId[:8]}***")
 
             # Reset happens within the transaction (atomic with usage increment)
@@ -321,12 +330,21 @@ class UsageService:
         Returns:
             True if reset occurred, False otherwise
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         period_start = user.currentPeriodStart
-        period_end = user.currentPeriodEnd or (period_start + timedelta(hours=24))
+
+        # Ensure period_start is timezone-aware
+        if period_start and period_start.tzinfo is None:
+            period_start = period_start.replace(tzinfo=timezone.utc)
+
+        period_end = user.currentPeriodEnd
+        if period_end and period_end.tzinfo is None:
+            period_end = period_end.replace(tzinfo=timezone.utc)
+        elif not period_end and period_start:
+            period_end = period_start + timedelta(hours=24)
 
         # Check if period has expired
-        if now >= period_end:
+        if period_end and now >= period_end:
             logger.info(f"Resetting usage for user {user.clerkId[:8]}***")
 
             # Reset usage
@@ -390,7 +408,12 @@ class UsageService:
         Returns:
             String like "8h 23m" or "45m"
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+
+        # Ensure period_end is timezone-aware
+        if period_end and period_end.tzinfo is None:
+            period_end = period_end.replace(tzinfo=timezone.utc)
+
         delta = period_end - now
 
         if delta.total_seconds() <= 0:
