@@ -163,6 +163,7 @@ class ExecutionResult:
     youtube_sources: List[Dict[str, str]] = field(default_factory=list)
     selve_web_context: Optional[str] = None
     selve_web_sources: List[Dict[str, str]] = field(default_factory=list)
+    assessment_data: Optional[Dict[str, Any]] = None  # User's assessment scores and narrative
     personality_insights: Optional[str] = None
     relevant_memories: List[Any] = field(default_factory=list)  # MemorySearchResult objects
     errors: List[str] = field(default_factory=list)
@@ -696,6 +697,7 @@ class ThinkingEngine:
                 web_research=execution_result.web_research,
                 youtube_context=execution_result.youtube_context,
                 selve_web_context=execution_result.selve_web_context,
+                assessment_data=execution_result.assessment_data,
             )
             
             # Stream response
@@ -887,6 +889,22 @@ class ThinkingEngine:
                 parameters={},
             ))
 
+        # User assessment data (scores and narrative)
+        # Fetch when user asks about their scores, personality profile, or specific dimensions
+        assessment_keywords = [
+            "my score", "my scores", "what are my", "my personality", "my profile",
+            "my results", "my assessment", "my dimension", "my lumen", "my aether",
+            "my orpheus", "my vara", "my chronos", "my kael", "my orin", "my lyra",
+            "what is my", "how did i score", "my archetype", "my strengths",
+            "my growth areas", "my weaknesses"
+        ]
+        if any(keyword in message_lower for keyword in assessment_keywords):
+            plan.append(PlanStep(
+                action="fetch_assessment",
+                priority=1,  # High priority - direct question about user's data
+                parameters={},
+            ))
+
         # Web research if needed (future)
         if analysis.needs_web_research and ThinkingConfig.WEB_SEARCH_ENABLED:
             plan.append(PlanStep(
@@ -954,6 +972,10 @@ class ThinkingEngine:
                     selve_web_result = await self._execute_selve_web_search(message)
                     result.selve_web_context = selve_web_result.get("context")
                     result.selve_web_sources = selve_web_result.get("sources", [])
+
+                elif step.action == "fetch_assessment":
+                    assessment_result = await self._execute_fetch_assessment(user_state.clerk_user_id, message)
+                    result.assessment_data = assessment_result.get("data")
 
                 elif step.action == "web_search":
                     web_result = await self._execute_web_search(message)
@@ -1453,6 +1475,49 @@ class ThinkingEngine:
             self.logger.warning(f"SELVE web content search failed: {e}")
             return {"context": None, "sources": []}
 
+    async def _execute_fetch_assessment(
+        self,
+        user_id: str,
+        message: str,
+    ) -> Dict[str, Any]:
+        """
+        Fetch user's assessment scores and narrative.
+
+        This fetches the user's complete assessment data including:
+        - 8 dimension scores (LUMEN, AETHER, ORPHEUS, VARA, CHRONOS, KAEL, ORIN, LYRA)
+        - Full personality narrative
+        - Archetype and profile pattern
+
+        Args:
+            user_id: User's Clerk ID
+            message: User's query (to determine what data to fetch)
+
+        Returns:
+            Dict with assessment data
+        """
+        try:
+            from app.tools.assessment_tool import AssessmentTool
+
+            tool = AssessmentTool()
+
+            # Fetch full assessment data
+            result = await tool.get_user_assessment(
+                user_id=user_id,
+                include_narrative=True,
+                include_scores=True,
+            )
+
+            if result.get("status") == "success":
+                self.logger.info(f"✅ Fetched assessment data for user {user_id[:8]}...")
+                return {"data": result}
+            else:
+                self.logger.info(f"No assessment found for user {user_id[:8]}...")
+                return {"data": result}
+
+        except Exception as e:
+            self.logger.warning(f"Assessment fetch failed: {e}")
+            return {"data": None}
+
     # =========================================================================
     # Prompt Building
     # =========================================================================
@@ -1556,6 +1621,7 @@ class ThinkingEngine:
         web_research: Optional[str] = None,
         youtube_context: Optional[str] = None,
         selve_web_context: Optional[str] = None,
+        assessment_data: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, str]]:
         """Build message list for LLM."""
         messages = [{"role": "system", "content": system_prompt}]
@@ -1584,6 +1650,37 @@ class ThinkingEngine:
 
         if web_research:
             context_parts.append(f"<web_research>\n{web_research}\n</web_research>")
+
+        # Add assessment data if fetched
+        if assessment_data and assessment_data.get("status") == "success":
+            assessment_parts = []
+
+            # Add scores
+            if "scores" in assessment_data:
+                scores = assessment_data["scores"]
+                scores_text = "DIMENSION SCORES:\n"
+                for dim, score in scores.items():
+                    scores_text += f"  {dim}: {score:.1f}/100\n"
+                assessment_parts.append(scores_text)
+
+            # Add archetype and profile
+            if assessment_data.get("archetype"):
+                assessment_parts.append(f"ARCHETYPE: {assessment_data['archetype']}")
+            if assessment_data.get("profile_pattern"):
+                assessment_parts.append(f"PROFILE PATTERN: {assessment_data['profile_pattern']}")
+
+            # Add narrative sections
+            if "narrative" in assessment_data:
+                narrative = assessment_data["narrative"]
+                if isinstance(narrative, dict):
+                    assessment_parts.append("\nPERSONALITY NARRATIVE:")
+                    for key in ["overview", "core_traits", "strengths", "growth_areas"]:
+                        if key in narrative and narrative[key]:
+                            formatted_key = key.replace("_", " ").title()
+                            assessment_parts.append(f"\n{formatted_key}: {narrative[key]}")
+
+            if assessment_parts:
+                context_parts.append(f"<assessment_results>\n{chr(10).join(assessment_parts)}\n</assessment_results>")
 
         if context_parts:
             user_message = "\n\n".join(context_parts) + f"\n\nUser Question: {message}"
@@ -1668,6 +1765,7 @@ class ThinkingEngine:
                 web_research=execution_result.web_research,
                 youtube_context=execution_result.youtube_context,
                 selve_web_context=execution_result.selve_web_context,
+                assessment_data=execution_result.assessment_data,
             )
 
             # Non-streaming generation
