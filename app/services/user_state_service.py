@@ -230,11 +230,8 @@ class UserState:
     has_assessment: bool = False
     
     # SELVE Profile
-    scores: Optional[SELVEScores] = None
     archetype: Optional[str] = None
     profile_pattern: Optional[str] = None
-    narrative_summary: Optional[str] = None
-    full_narrative: Optional[Dict[str, Any]] = None  # Complete narrative JSON with detailed insights
     assessment_completed_at: Optional[datetime] = None
     
     # Friend Assessments
@@ -279,51 +276,17 @@ class UserState:
             parts.append(f"   Archetype: {self.archetype or 'Unknown'}")
             if self.assessment_completed_at:
                 parts.append(f"   Completed: {self.assessment_completed_at.strftime('%Y-%m-%d')}")
+            parts.append("")
+            parts.append("   NOTE: If user asks about their scores or personality details,")
+            parts.append("   the system will automatically fetch their assessment data.")
         else:
             parts.append("❌ User has NOT taken the SELVE assessment yet")
             parts.append("   DO NOT repeatedly ask if they have scores - they DON'T.")
             parts.append("   Gently encourage taking the assessment when relevant.")
-        
-        # === SELVE Profile & Narrative ===
-        if self.full_narrative:
-            parts.append("")
-            parts.append("### COMPLETE PERSONALITY NARRATIVE ###")
-            parts.append("The user's full assessment results:")
-            parts.append("")
 
-            # Include key narrative sections
-            if isinstance(self.full_narrative, dict):
-                # Overview/Summary
-                if "overview" in self.full_narrative:
-                    parts.append(f"OVERVIEW: {self.full_narrative['overview']}")
-                    parts.append("")
-                elif "summary" in self.full_narrative:
-                    parts.append(f"SUMMARY: {self.full_narrative['summary']}")
-                    parts.append("")
+        # Scores and detailed narrative are now fetched on-demand via AssessmentTool
+        # when user specifically asks about them
 
-                # Core insights
-                for key in ["core_traits", "strengths", "growth_areas", "communication_style",
-                           "decision_making", "relationships", "career_insights", "life_philosophy"]:
-                    if key in self.full_narrative and self.full_narrative[key]:
-                        formatted_key = key.replace("_", " ").title()
-                        parts.append(f"{formatted_key}: {self.full_narrative[key]}")
-                        parts.append("")
-
-        # === SELVE Scores ===
-        if self.scores:
-            parts.append("")
-            parts.append("### SELVE SCORES ###")
-            parts.append("ALL 8 DIMENSIONS (0 = not yet assessed):")
-
-            # Get all scores sorted by value
-            all_scores = sorted(self.scores.to_dict().items(), key=lambda x: x[1], reverse=True)
-
-            for dim, score in all_scores:
-                if score == 0:
-                    parts.append(f"  {dim}: {int(score)}/100 (not yet assessed)")
-                else:
-                    parts.append(f"  {dim}: {int(score)}/100")
-        
         # === Friend Assessments ===
         if self.friend_assessments:
             parts.append("")
@@ -332,18 +295,6 @@ class UserState:
             
             for fa in self.friend_assessments[:3]:  # Show max 3
                 parts.append(f"  • {fa.friend_name} ({fa.relationship})")
-                # Show where friends see them differently
-                if self.scores:
-                    user_scores = self.scores.to_dict()
-                    friend_scores = fa.scores.to_dict()
-                    
-                    for dim in user_scores:
-                        diff = friend_scores.get(dim, 0) - user_scores.get(dim, 0)
-                        if abs(diff) > 15:
-                            direction = "higher" if diff > 0 else "lower"
-                            parts.append(
-                                f"    → Sees {dim} {abs(int(diff))} points {direction}"
-                            )
         
         # === User Notes (Persistent Observations) ===
         important_notes = [n for n in self.notes if n.importance >= 3]
@@ -489,33 +440,13 @@ class UserStateService:
             if assessment:
                 state.has_assessment = True
                 state.assessment_status = AssessmentStatus.COMPLETED
-                
-                state.scores = SELVEScores(
-                    lumen=assessment.scoreLumen or 0,
-                    aether=assessment.scoreAether or 0,
-                    orpheus=assessment.scoreOrpheus or 0,
-                    orin=assessment.scoreOrin or 0,
-                    lyra=assessment.scoreLyra or 0,
-                    vara=assessment.scoreVara or 0,
-                    chronos=assessment.scoreChronos or 0,
-                    kael=assessment.scoreKael or 0,
-                )
-                
+
                 state.archetype = assessment.archetype
                 state.profile_pattern = assessment.profilePattern
                 state.assessment_completed_at = assessment.createdAt
-                
-                # Extract full narrative if available
-                if assessment.narrative and isinstance(assessment.narrative, dict):
-                    # Store the full narrative JSON for comprehensive context
-                    state.narrative_summary = assessment.narrative.get("summary") or assessment.narrative.get("overview")
 
-                    # Store full narrative for detailed personality description
-                    # This allows the chatbot to reference specific insights about the user
-                    if not hasattr(state, 'full_narrative'):
-                        state.full_narrative = assessment.narrative
-                    else:
-                        state.full_narrative = assessment.narrative
+                # Scores and narrative are now fetched on-demand via AssessmentTool
+                # when user specifically asks about them
             else:
                 state.has_assessment = False
                 state.assessment_status = AssessmentStatus.NOT_TAKEN
