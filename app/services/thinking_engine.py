@@ -574,7 +574,86 @@ class ThinkingEngine:
             from .compression_service import CompressionService
             self._compression_service = CompressionService()
         return self._compression_service
-    
+
+    # =========================================================================
+    # Helper: Contextual Thinking Messages
+    # =========================================================================
+
+    async def _generate_thinking_message(
+        self,
+        action: str,
+        user_message: str,
+        context: Optional[str] = None,
+    ) -> str:
+        """
+        Generate a contextual thinking message for a tool action.
+
+        Uses gpt-5-nano with low reasoning/verbosity for fast, cheap generation.
+        This creates natural, contextual messages like "Hmm, let me check your scores..."
+        instead of generic "Processing..." messages.
+
+        Args:
+            action: The tool action being performed
+            user_message: What the user asked
+            context: Additional context (optional)
+
+        Returns:
+            Short, natural thinking message
+        """
+        # Map actions to prompts
+        action_prompts = {
+            "fetch_assessment": "The assistant is about to fetch the user's SELVE assessment scores and personality narrative from the database.",
+            "rag_search": "The assistant is searching the SELVE knowledge base for information about personality dimensions and concepts.",
+            "youtube_search": "The assistant is searching educational YouTube content for psychology and personality insights.",
+            "youtube_live_fetch": "The assistant is fetching and analyzing a specific YouTube video's transcript.",
+            "selve_web_search": "The assistant is looking up information from the SELVE website (features, pricing, how it works).",
+            "memory_search": "The assistant is recalling relevant details from previous conversations with this user.",
+            "web_search": "The assistant is researching additional information from the web.",
+        }
+
+        action_description = action_prompts.get(action, f"The assistant is performing: {action}")
+
+        try:
+            # Use gpt-5-nano for fast, cheap generation
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that generates short, natural thinking messages. "
+                               "Generate a brief (5-10 words), conversational message that shows what the assistant is doing. "
+                               "Be warm, casual, and specific. Examples: 'Hmm, let me pull up your scores...', "
+                               "'Give me a sec to check that...', 'Looking at your profile now...'"
+                },
+                {
+                    "role": "user",
+                    "content": f"User asked: \"{user_message}\"\n\n{action_description}\n\nGenerate a short thinking message:"
+                }
+            ]
+
+            result = await self.llm_service.generate_response_async(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=20,  # Very short responses
+                model="gpt-5-nano"  # Cheapest, fastest model
+            )
+
+            message = result.get("content", "").strip()
+            # Clean up any quotes
+            message = message.strip('"\'')
+
+            return message if message else "One moment..."
+
+        except Exception as e:
+            self.logger.warning(f"Failed to generate thinking message: {e}")
+            # Fallback to simple messages
+            fallbacks = {
+                "fetch_assessment": "Let me pull up your results...",
+                "rag_search": "Searching the knowledge base...",
+                "youtube_search": "Looking for insights...",
+                "selve_web_search": "Checking the SELVE website...",
+                "memory_search": "Recalling our conversation...",
+            }
+            return fallbacks.get(action, "One moment...")
+
     # =========================================================================
     # Main Thinking Method (Streaming)
     # =========================================================================
@@ -651,18 +730,28 @@ class ThinkingEngine:
             steps.append(step)
             
             # === PHASE 3: EXECUTE ===
-            if emit_status:
+            # Emit contextual thinking messages for each tool action
+            if plan and emit_status:
+                # Generate and emit contextual message for first action
+                first_action = plan[0].action
+                thinking_msg = await self._generate_thinking_message(first_action, message)
+                yield ThinkingStatus(
+                    phase=ThinkingPhase.RETRIEVING,
+                    message=thinking_msg,
+                    details={"step": 3, "total": 4, "action": first_action},
+                ).to_dict()
+            elif emit_status:
                 yield ThinkingStatus(
                     phase=ThinkingPhase.RETRIEVING,
                     message="Gathering relevant information...",
                     details={"step": 3, "total": 4},
                 ).to_dict()
-            
+
             step = ThinkingStep(
                 phase=ThinkingPhase.RETRIEVING,
                 description="Executing plan",
             )
-            
+
             execution_result = await self._execute_plan(plan, message, analysis, user_state)
             step.complete(execution_result)
             steps.append(step)
@@ -891,13 +980,23 @@ class ThinkingEngine:
 
         # User assessment data (scores and narrative)
         # Fetch when user asks about their scores, personality profile, or specific dimensions
+        # EXPANDED: More patterns to catch requests for narrative, results, etc.
         assessment_keywords = [
+            # Explicit requests
             "my score", "my scores", "what are my", "my personality", "my profile",
             "my results", "my assessment", "my dimension", "my lumen", "my aether",
             "my orpheus", "my vara", "my chronos", "my kael", "my orin", "my lyra",
             "what is my", "how did i score", "my archetype", "my strengths",
-            "my growth areas", "my weaknesses"
+            "my growth areas", "my weaknesses",
+            # Narrative and summary requests
+            "narrative", "summary", "breakdown", "analysis", "from my assessment",
+            "from my results", "from the results", "from the assessment",
+            "the one from", "personalized", "my data", "what does my",
+            # Implicit requests
+            "tell me about myself", "what do my", "explain my", "show me my",
+            "share my", "give me my", "get my", "fetch my", "pull up my"
         ]
+        # Also check if user has assessment - if they ask about "results" and have assessment, fetch it
         if any(keyword in message_lower for keyword in assessment_keywords):
             plan.append(PlanStep(
                 action="fetch_assessment",
