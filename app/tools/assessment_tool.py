@@ -13,7 +13,7 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from app.db import get_db
+from app.db import db
 
 
 class AssessmentTool:
@@ -49,8 +49,6 @@ class AssessmentTool:
             Dictionary with assessment data or error message
         """
         try:
-            db = get_db()
-
             # Get user's most recent assessment result
             assessment = await db.assessmentresult.find_first(
                 where={
