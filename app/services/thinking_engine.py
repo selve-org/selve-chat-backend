@@ -633,7 +633,7 @@ class ThinkingEngine:
                 messages=messages,
                 temperature=0.7,
                 max_tokens=20,  # Very short responses
-                model="gpt-5-nano"  # Cheapest, fastest model
+                model="gpt-4o-mini"  # Cheapest GPT-4 class model
             )
 
             message = result.get("content", "").strip()
