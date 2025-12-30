@@ -42,6 +42,14 @@ class ChatRequest(BaseModel):
         default="UTC",
         description="User's timezone for temporal awareness (e.g., 'America/New_York')"
     )
+    is_authenticated: Optional[bool] = Field(
+        default=False,
+        description="Whether the user is authenticated (logged in)"
+    )
+    sign_in_url: Optional[str] = Field(
+        default=None,
+        description="Sign-in URL for the current environment (production or development)"
+    )
 
     # Regeneration context fields
     regeneration_type: Optional[str] = Field(

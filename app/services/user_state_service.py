@@ -224,7 +224,11 @@ class UserState:
     clerk_user_id: str
     user_name: Optional[str] = None
     email: Optional[str] = None
-    
+
+    # Authentication
+    is_authenticated: bool = False
+    sign_in_url: Optional[str] = None
+
     # Assessment Status (CRITICAL - chatbot MUST know this)
     assessment_status: AssessmentStatus = AssessmentStatus.NOT_TAKEN
     has_assessment: bool = False
@@ -267,7 +271,20 @@ class UserState:
         
         if self.user_name:
             parts.append(f"Name: {self.user_name}")
-        
+
+        # === Authentication Status ===
+        parts.append("")
+        parts.append("### AUTHENTICATION STATUS ###")
+        if self.is_authenticated:
+            parts.append("✅ User is LOGGED IN (authenticated)")
+            parts.append("   They have a persistent account with saved conversations.")
+        else:
+            parts.append("❌ User is NOT logged in (anonymous/guest)")
+            parts.append("   This is a temporary chat session that will not be saved.")
+            if self.sign_in_url:
+                parts.append(f"   Sign-in URL: {self.sign_in_url}")
+                parts.append("   You can provide this link when recommending they sign in.")
+
         parts.append("")
         parts.append("### ASSESSMENT STATUS ###")
         
@@ -390,20 +407,24 @@ class UserStateService:
         self,
         clerk_user_id: str,
         session_id: Optional[str] = None,
+        is_authenticated: bool = False,
+        sign_in_url: Optional[str] = None,
         include_memories: bool = True,
         include_friend_assessments: bool = True,
         include_notes: bool = True,
     ) -> UserState:
         """
         Load complete user state from database.
-        
+
         Args:
             clerk_user_id: Clerk user ID
             session_id: Current session ID (for loading recent messages)
+            is_authenticated: Whether user is authenticated (logged in)
+            sign_in_url: Sign-in URL for the current environment
             include_memories: Load conversation memories
             include_friend_assessments: Load friend assessments
             include_notes: Load user notes
-            
+
         Returns:
             Complete UserState
         """
@@ -415,6 +436,8 @@ class UserStateService:
             clerk_user_id=clerk_user_id,
             assessment_status=AssessmentStatus.NOT_TAKEN,
             has_assessment=False,
+            is_authenticated=is_authenticated,
+            sign_in_url=sign_in_url,
         )
         
         try:

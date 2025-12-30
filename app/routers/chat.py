@@ -311,6 +311,8 @@ async def chat_stream(
                     session_id=chat_request.session_id,
                     client_ip=client_ip,
                     user_timezone=chat_request.user_timezone or "UTC",  # User's timezone for temporal awareness
+                    is_authenticated=chat_request.is_authenticated,  # Whether user is logged in
+                    sign_in_url=chat_request.sign_in_url,  # Sign-in URL for environment
                     emit_status=True,
                     regeneration_type=chat_request.regeneration_type,  # NEW: Pass regeneration context
                 ):

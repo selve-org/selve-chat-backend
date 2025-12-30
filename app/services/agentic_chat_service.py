@@ -216,6 +216,8 @@ class AgenticChatService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         client_ip: Optional[str] = None,
         user_timezone: str = "UTC",
+        is_authenticated: bool = False,
+        sign_in_url: Optional[str] = None,
         emit_status: bool = True,
         regeneration_type: Optional[str] = None,
     ) -> AsyncGenerator[Union[str, Dict[str, Any]], None]:
@@ -231,6 +233,8 @@ class AgenticChatService:
             conversation_history: Previous messages
             client_ip: Client IP for geo/security
             user_timezone: User's timezone (e.g., "America/New_York")
+            is_authenticated: Whether user is authenticated (logged in)
+            sign_in_url: Sign-in URL for the current environment
             emit_status: Whether to emit status events
             regeneration_type: "regenerate" | "edit" | None
 
@@ -392,6 +396,8 @@ class AgenticChatService:
                                 self.user_state_service.load_user_state(
                                     clerk_user_id=clerk_user_id,
                                     session_id=session_id,
+                                    is_authenticated=is_authenticated,
+                                    sign_in_url=sign_in_url,
                                 ),
                                 timeout=AgentConfig.USER_STATE_TIMEOUT,
                             )
@@ -399,7 +405,7 @@ class AgenticChatService:
                             self.logger.warning("User state load timed out")
                         except Exception as e:
                             self.logger.error(f"User state load failed: {e}")
-                
+
                     # Create minimal user state if not loaded
                     if user_state is None:
                         from .user_state_service import UserState, AssessmentStatus
@@ -408,6 +414,8 @@ class AgenticChatService:
                             clerk_user_id=clerk_user_id or "",
                             assessment_status=AssessmentStatus.NOT_TAKEN,
                             has_assessment=False,
+                            is_authenticated=is_authenticated,
+                            sign_in_url=sign_in_url,
                         )
     
                     # If no explicit history was provided, fall back to stored session messages
