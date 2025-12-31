@@ -164,6 +164,7 @@ class ExecutionResult:
     selve_web_context: Optional[str] = None
     selve_web_sources: List[Dict[str, str]] = field(default_factory=list)
     assessment_data: Optional[Dict[str, Any]] = None  # User's assessment scores and narrative
+    assessment_comparison: Optional[Dict[str, Any]] = None  # Comparison of current vs archived assessments
     personality_insights: Optional[str] = None
     relevant_memories: List[Any] = field(default_factory=list)  # MemorySearchResult objects
     errors: List[str] = field(default_factory=list)
@@ -787,6 +788,7 @@ class ThinkingEngine:
                 youtube_context=execution_result.youtube_context,
                 selve_web_context=execution_result.selve_web_context,
                 assessment_data=execution_result.assessment_data,
+                assessment_comparison=execution_result.assessment_comparison,
             )
             
             # Stream response
@@ -988,6 +990,24 @@ class ThinkingEngine:
                 parameters={},
             ))
 
+        # Assessment history and comparison (archived results)
+        # Fetch when user asks about changes, growth, or previous results
+        comparison_keywords = [
+            "how have i changed", "how i've changed", "have i changed",
+            "my previous", "my old", "my past", "my earlier",
+            "compare", "comparison", "difference", "changed",
+            "growth", "progress", "evolution", "development",
+            "before and after", "then and now", "used to be",
+            "last time", "previous assessment", "old results",
+            "archived", "history", "over time"
+        ]
+        if any(keyword in message_lower for keyword in comparison_keywords):
+            plan.append(PlanStep(
+                action="compare_assessments",
+                priority=1,  # High priority - direct question about changes
+                parameters={},
+            ))
+
         # Web research if needed (future)
         if analysis.needs_web_research and ThinkingConfig.WEB_SEARCH_ENABLED:
             plan.append(PlanStep(
@@ -1059,6 +1079,10 @@ class ThinkingEngine:
                 elif step.action == "fetch_assessment":
                     assessment_result = await self._execute_fetch_assessment(user_state.clerk_user_id, message)
                     result.assessment_data = assessment_result.get("data")
+
+                elif step.action == "compare_assessments":
+                    comparison_result = await self._execute_compare_assessments(user_state.clerk_user_id, message)
+                    result.assessment_comparison = comparison_result.get("data")
 
                 elif step.action == "web_search":
                     web_result = await self._execute_web_search(message)
@@ -1601,6 +1625,50 @@ class ThinkingEngine:
             self.logger.warning(f"Assessment fetch failed: {e}")
             return {"data": None}
 
+    async def _execute_compare_assessments(
+        self,
+        user_id: str,
+        message: str,
+    ) -> Dict[str, Any]:
+        """
+        Compare user's current and archived assessments to track personality changes.
+
+        This fetches:
+        - Current assessment (most recent)
+        - Most recent archived assessment (previous)
+        - Score changes for all 8 dimensions
+        - Biggest increases and decreases
+        - Archetype changes
+
+        Args:
+            user_id: User's Clerk ID
+            message: User's query
+
+        Returns:
+            Dict with comparison data
+        """
+        try:
+            from app.tools.assessment_tool import AssessmentTool
+
+            tool = AssessmentTool()
+
+            # Compare assessments
+            result = await tool.compare_assessments(user_id=user_id)
+
+            if result.get("status") == "success":
+                self.logger.info(f"✅ Compared assessments for user {user_id[:8]}...")
+                return {"data": result}
+            elif result.get("status") == "no_comparison":
+                self.logger.info(f"No archived assessments for user {user_id[:8]}...")
+                return {"data": result}
+            else:
+                self.logger.info(f"Assessment comparison failed for user {user_id[:8]}...")
+                return {"data": result}
+
+        except Exception as e:
+            self.logger.warning(f"Assessment comparison failed: {e}")
+            return {"data": None}
+
     # =========================================================================
     # Prompt Building
     # =========================================================================
@@ -1705,6 +1773,7 @@ class ThinkingEngine:
         youtube_context: Optional[str] = None,
         selve_web_context: Optional[str] = None,
         assessment_data: Optional[Dict[str, Any]] = None,
+        assessment_comparison: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, str]]:
         """Build message list for LLM."""
         messages = [{"role": "system", "content": system_prompt}]
@@ -1764,6 +1833,59 @@ class ThinkingEngine:
 
             if assessment_parts:
                 context_parts.append(f"<assessment_results>\n{chr(10).join(assessment_parts)}\n</assessment_results>")
+
+        # Add assessment comparison data if fetched
+        if assessment_comparison and assessment_comparison.get("status") == "success":
+            comparison_parts = []
+
+            comparison_parts.append("PERSONALITY CHANGES OVER TIME:")
+            comparison_parts.append(f"\nCurrent Archetype: {assessment_comparison.get('current_archetype')}")
+            comparison_parts.append(f"Previous Archetype: {assessment_comparison.get('previous_archetype')}")
+
+            if assessment_comparison.get("archetype_changed"):
+                comparison_parts.append("⚠️ ARCHETYPE HAS CHANGED - Significant personality shift detected!")
+
+            comparison_parts.append(f"\nAssessment completed: {assessment_comparison.get('current_completed_at')}")
+            comparison_parts.append(f"Previous assessment: {assessment_comparison.get('previous_completed_at')}")
+
+            # Add score changes
+            if "score_changes" in assessment_comparison:
+                comparison_parts.append("\nDIMENSION SCORE CHANGES:")
+                for dim, data in assessment_comparison["score_changes"].items():
+                    change = data["change"]
+                    arrow = "↑" if change > 0 else "↓" if change < 0 else "→"
+                    comparison_parts.append(
+                        f"  {dim}: {data['previous']:.1f} → {data['current']:.1f} "
+                        f"({arrow} {abs(change):.1f}, {data['percent_change']:+.1f}%)"
+                    )
+
+            # Highlight biggest changes
+            if assessment_comparison.get("biggest_increase"):
+                inc = assessment_comparison["biggest_increase"]
+                comparison_parts.append(
+                    f"\nBiggest Increase: {inc['dimension']} "
+                    f"({inc['previous']:.1f} → {inc['current']:.1f}, +{inc['change']:.1f})"
+                )
+
+            if assessment_comparison.get("biggest_decrease"):
+                dec = assessment_comparison["biggest_decrease"]
+                comparison_parts.append(
+                    f"Biggest Decrease: {dec['dimension']} "
+                    f"({dec['previous']:.1f} → {dec['current']:.1f}, {dec['change']:.1f})"
+                )
+
+            comparison_parts.append(f"\nTotal archived assessments: {assessment_comparison.get('total_archived', 0)}")
+
+            if comparison_parts:
+                context_parts.append(f"<assessment_comparison>\n{chr(10).join(comparison_parts)}\n</assessment_comparison>")
+
+        elif assessment_comparison and assessment_comparison.get("status") == "no_comparison":
+            # User has only taken the assessment once
+            context_parts.append(
+                "<assessment_comparison>\n"
+                "No previous assessments found. This is the user's first assessment.\n"
+                "</assessment_comparison>"
+            )
 
         if context_parts:
             user_message = "\n\n".join(context_parts) + f"\n\nUser Question: {message}"
@@ -1849,6 +1971,7 @@ class ThinkingEngine:
                 youtube_context=execution_result.youtube_context,
                 selve_web_context=execution_result.selve_web_context,
                 assessment_data=execution_result.assessment_data,
+                assessment_comparison=execution_result.assessment_comparison,
             )
 
             # Non-streaming generation
