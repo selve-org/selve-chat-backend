@@ -837,23 +837,27 @@ class ThinkingEngine:
 
             if agentic_enabled:
                 # NEW: Agentic function calling approach
-                if emit_status:
-                    yield ThinkingStatus(
-                        phase=ThinkingPhase.PLANNING,
-                        message="Selecting tools intelligently...",
-                        details={"step": 2, "total": 4, "mode": "agentic"},
-                    ).to_dict()
-
                 step = ThinkingStep(
                     phase=ThinkingPhase.PLANNING,
                     description="Agentic tool selection and execution",
                 )
 
-                execution_result = await self._agentic_tool_loop(
+                # Iterate over agentic tool loop generator to get real-time status
+                execution_result = None
+                async for item in self._agentic_tool_loop(
                     message=message,
                     user_state=user_state,
                     session_id=getattr(user_state, 'session_id', 'unknown'),
-                )
+                    emit_status=emit_status,
+                ):
+                    if item.get("type") == "status":
+                        # Forward real-time status updates to user
+                        if emit_status:
+                            yield item
+                    elif item.get("type") == "result":
+                        # Final result from agentic loop
+                        execution_result = item["execution_result"]
+
                 step.complete(execution_result)
                 steps.append(step)
 
@@ -1176,7 +1180,8 @@ class ThinkingEngine:
         user_state: Any,
         session_id: str,
         max_iterations: int = None,
-    ) -> ExecutionResult:
+        emit_status: bool = True,
+    ):
         """
         Agentic tool execution loop using LLM function calling.
 
@@ -1188,9 +1193,11 @@ class ThinkingEngine:
             user_state: User context (auth, assessment, etc.)
             session_id: Session ID for memory search
             max_iterations: Maximum tool loop iterations (default from env)
+            emit_status: Whether to yield status updates
 
-        Returns:
-            ExecutionResult with aggregated tool outputs
+        Yields:
+            Status dicts with real-time progress updates
+            Final result dict with ExecutionResult
         """
         from app.tools.function_definitions import get_tool_definitions
         from langfuse import get_client
@@ -1214,6 +1221,16 @@ class ThinkingEngine:
         while iteration < max_iterations:
             iteration += 1
             self.logger.info(f"Agentic tool loop iteration {iteration}/{max_iterations}")
+
+            # REAL STATUS: Emit iteration start
+            if emit_status:
+                yield {
+                    "type": "status",
+                    "phase": "tool_iteration",
+                    "iteration": iteration,
+                    "max_iterations": max_iterations,
+                    "message": f"Analyzing tools ({iteration}/{max_iterations})...",
+                }
 
             try:
                 # LLM decides which tools to call (with Langfuse tracing)
@@ -1253,10 +1270,26 @@ class ThinkingEngine:
                 if not tool_calls:
                     # LLM is done - no more tools to call
                     self.logger.info("LLM finished - no more tool calls requested")
+                    if emit_status:
+                        yield {
+                            "type": "status",
+                            "phase": "tool_complete",
+                            "message": "Analysis complete, crafting response...",
+                        }
                     break
 
+                # REAL STATUS: Emit tool calls about to be executed
+                if emit_status:
+                    tool_names = [tc["function"]["name"] for tc in tool_calls]
+                    yield {
+                        "type": "status",
+                        "phase": "calling_tools",
+                        "tools": tool_names,
+                        "message": f"Using {', '.join(tool_names)}...",
+                    }
+
                 # Execute each tool call (with Langfuse spans)
-                for tool_call in tool_calls:
+                for idx, tool_call in enumerate(tool_calls, 1):
                     tool_name = tool_call["function"]["name"]
                     try:
                         # Parse arguments (they come as JSON string)
@@ -1266,7 +1299,20 @@ class ThinkingEngine:
 
                     self.logger.info(f"Executing tool: {tool_name} with args: {arguments}")
 
+                    # REAL STATUS: Emit individual tool execution
+                    if emit_status:
+                        yield {
+                            "type": "status",
+                            "phase": "executing_tool",
+                            "tool": tool_name,
+                            "tool_index": idx,
+                            "total_tools": len(tool_calls),
+                            "message": f"Executing {tool_name}...",
+                            "args": arguments,
+                        }
+
                     # Execute the tool with Langfuse span
+                    tool_start = datetime.utcnow()
                     with langfuse.start_as_current_observation(
                         as_type="span",
                         name=f"tool-{tool_name}",
@@ -1289,6 +1335,19 @@ class ThinkingEngine:
                             },
                         )
 
+                    tool_duration = (datetime.utcnow() - tool_start).total_seconds()
+
+                    # REAL STATUS: Emit tool completion
+                    if emit_status:
+                        yield {
+                            "type": "status",
+                            "phase": "tool_executed",
+                            "tool": tool_name,
+                            "duration_seconds": round(tool_duration, 2),
+                            "status": tool_result.get("status", "unknown"),
+                            "message": f"Completed {tool_name} ({tool_duration:.1f}s)",
+                        }
+
                     # Aggregate results into ExecutionResult
                     self._aggregate_tool_result(result, tool_name, tool_result)
 
@@ -1307,9 +1366,16 @@ class ThinkingEngine:
             except Exception as e:
                 self.logger.error(f"Error in agentic tool loop iteration {iteration}: {e}")
                 result.errors.append(f"Agentic loop error: {str(e)}")
+                if emit_status:
+                    yield {
+                        "type": "status",
+                        "phase": "error",
+                        "message": f"Error in tool execution: {str(e)}",
+                    }
                 break
 
-        return result
+        # Yield final result
+        yield {"type": "result", "execution_result": result}
 
     async def _execute_tool(
         self,
