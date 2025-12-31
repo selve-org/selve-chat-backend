@@ -224,6 +224,7 @@ class UserState:
     clerk_user_id: str
     user_name: Optional[str] = None
     email: Optional[str] = None
+    demographics: Optional[Dict[str, Any]] = None  # Age, country, etc. from assessment
 
     # Authentication
     is_authenticated: bool = False
@@ -271,6 +272,16 @@ class UserState:
         
         if self.user_name:
             parts.append(f"Name: {self.user_name}")
+
+        # Add demographics if available (age, country - non-identifying info)
+        if self.demographics:
+            demo_parts = []
+            if self.demographics.get("age"):
+                demo_parts.append(f"Age: {self.demographics['age']}")
+            if self.demographics.get("country"):
+                demo_parts.append(f"Country: {self.demographics['country']}")
+            if demo_parts:
+                parts.append(f"Demographics: {', '.join(demo_parts)}")
 
         # === Authentication Status ===
         parts.append("")
@@ -486,6 +497,19 @@ class UserStateService:
             if assessment:
                 state.has_assessment = True
                 state.assessment_status = AssessmentStatus.COMPLETED
+
+                # Load demographics from assessment session if available
+                assessment_session = await self.db.assessmentsession.find_first(
+                    where={"id": assessment.sessionId}
+                )
+
+                if assessment_session and assessment_session.demographics:
+                    # Store demographics for context (age, country, etc.)
+                    demographics = assessment_session.demographics
+                    if isinstance(demographics, dict):
+                        # Add to state for use in context
+                        if not hasattr(state, 'demographics'):
+                            state.demographics = demographics
 
                 state.archetype = assessment.archetype
                 state.profile_pattern = assessment.profilePattern
