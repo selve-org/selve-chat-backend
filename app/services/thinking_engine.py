@@ -55,15 +55,20 @@ class ThinkingConfig:
 
 
 class ThinkingPhase(str, Enum):
-    """Phases of the thinking process."""
+    """
+    Phases of the thinking process.
+    Each phase represents actual work being done, not cosmetic loading states.
+    """
+    SECURITY_CHECK = "security_check"
     ANALYZING = "analyzing"
     PLANNING = "planning"
-    RETRIEVING = "retrieving"
-    RESEARCHING = "researching"
-    PERSONALIZING = "personalizing"
-    SYNTHESIZING = "synthesizing"
+    MEMORY_SEARCHING = "memory_searching"
+    RAG_SEARCHING = "rag_searching"
+    YOUTUBE_SEARCHING = "youtube_searching"
+    YOUTUBE_FETCHING = "youtube_fetching"
+    WEB_SEARCHING = "web_searching"
+    SELVE_WEB_SEARCHING = "selve_web_searching"
     GENERATING = "generating"
-    VALIDATING = "validating"
     COMPLETE = "complete"
     ERROR = "error"
 
@@ -580,7 +585,7 @@ class ThinkingEngine:
     # Helper: Contextual Thinking Messages
     # =========================================================================
 
-    async def _generate_thinking_message(
+    def _generate_thinking_message(
         self,
         action: str,
         user_message: str,
@@ -589,9 +594,8 @@ class ThinkingEngine:
         """
         Generate a contextual thinking message for a tool action.
 
-        Uses gpt-5-nano with low reasoning/verbosity for fast, cheap generation.
-        This creates natural, contextual messages like "Hmm, let me check your scores..."
-        instead of generic "Processing..." messages.
+        Returns random static messages to feel natural without LLM cost.
+        Multiple variations prevent robotic repetition.
 
         Args:
             action: The tool action being performed
@@ -599,61 +603,175 @@ class ThinkingEngine:
             context: Additional context (optional)
 
         Returns:
-            Short, natural thinking message
+            Short, natural thinking message (randomly selected)
         """
-        # Map actions to prompts
-        action_prompts = {
-            "fetch_assessment": "The assistant is about to fetch the user's SELVE assessment scores and personality narrative from the database.",
-            "rag_search": "The assistant is searching the SELVE knowledge base for information about personality dimensions and concepts.",
-            "youtube_search": "The assistant is searching educational YouTube content for psychology and personality insights.",
-            "youtube_live_fetch": "The assistant is fetching and analyzing a specific YouTube video's transcript.",
-            "selve_web_search": "The assistant is looking up information from the SELVE website (features, pricing, how it works).",
-            "memory_search": "The assistant is recalling relevant details from previous conversations with this user.",
-            "web_search": "The assistant is researching additional information from the web.",
+        import random
+
+        # Multiple variations for each action type (10+ variants to feel dynamic)
+        message_variants = {
+            "fetch_assessment": [
+                "Let me pull up your results...",
+                "Checking your personality profile...",
+                "Looking at your scores now...",
+                "Give me a moment to get your data...",
+                "Pulling your assessment from the database...",
+                "Hmm, let me see your profile...",
+                "One sec, grabbing your results...",
+                "Let me check your dimensions...",
+                "Accessing your personality data...",
+                "Retrieving your SELVE profile...",
+                "Looking up your scores...",
+                "Getting your assessment data...",
+            ],
+            "rag_search": [
+                "Searching the knowledge base...",
+                "Looking that up for you...",
+                "Let me find information on that...",
+                "Checking our personality insights...",
+                "Searching through SELVE concepts...",
+                "Digging into the research...",
+                "Looking up personality info...",
+                "Exploring the knowledge base...",
+                "Searching for insights...",
+                "Let me see what we have on that...",
+                "Checking the research...",
+                "Looking through personality concepts...",
+            ],
+            "youtube_search": [
+                "Looking for insights...",
+                "Searching for educational content...",
+                "Finding relevant videos...",
+                "Let me search YouTube for that...",
+                "Looking for expert perspectives...",
+                "Searching for psychology insights...",
+                "Finding educational resources...",
+                "Checking for video content...",
+                "Looking up related videos...",
+                "Searching for learning materials...",
+                "Finding expert videos...",
+                "Searching educational channels...",
+            ],
+            "youtube_live_fetch": [
+                "Analyzing video transcript...",
+                "Processing video content...",
+                "Reading through the transcript...",
+                "Let me check this video...",
+                "Extracting insights from the video...",
+                "Analyzing the content...",
+                "Going through the transcript...",
+                "Processing what they're saying...",
+                "Reviewing the video details...",
+                "Checking out this resource...",
+                "Reading the video transcript...",
+                "Analyzing what they said...",
+            ],
+            "selve_web_search": [
+                "Checking the SELVE website...",
+                "Looking up SELVE features...",
+                "Let me see what SELVE offers...",
+                "Searching SELVE documentation...",
+                "Checking how SELVE works...",
+                "Looking at SELVE pricing...",
+                "Reviewing SELVE features...",
+                "Let me check SELVE info...",
+                "Exploring SELVE details...",
+                "Searching SELVE resources...",
+                "Looking up SELVE info...",
+                "Checking SELVE docs...",
+            ],
+            "memory_search": [
+                "Recalling our conversation...",
+                "Let me remember what we discussed...",
+                "Checking our chat history...",
+                "Looking back at what you said...",
+                "Refreshing my memory...",
+                "Let me think back...",
+                "Reviewing our conversation...",
+                "Recalling previous messages...",
+                "Checking what we talked about...",
+                "Let me look back at that...",
+                "Remembering our chat...",
+                "Reviewing what you mentioned...",
+            ],
+            "web_search": [
+                "Researching that for you...",
+                "Searching the web...",
+                "Let me look that up...",
+                "Finding information online...",
+                "Checking recent sources...",
+                "Searching for answers...",
+                "Looking up current info...",
+                "Researching the topic...",
+                "Searching online resources...",
+                "Let me find that for you...",
+                "Looking up information...",
+                "Searching online...",
+            ],
+            "analyzing": [
+                "Analyzing your question...",
+                "Thinking about this...",
+                "Let me process that...",
+                "Considering your query...",
+                "Working on your request...",
+                "Processing your message...",
+                "Analyzing what you asked...",
+                "Let me think about this...",
+                "Reviewing your question...",
+                "Processing your request...",
+                "Thinking this through...",
+                "Considering this carefully...",
+            ],
+            "planning": [
+                "Planning my response...",
+                "Organizing my thoughts...",
+                "Figuring out the best approach...",
+                "Determining what to do...",
+                "Deciding how to help...",
+                "Planning the next steps...",
+                "Thinking through this...",
+                "Organizing information...",
+                "Structuring my response...",
+                "Planning how to answer...",
+                "Working out the approach...",
+                "Deciding the best way...",
+            ],
+            "generating": [
+                "Crafting a response...",
+                "Putting together my thoughts...",
+                "Writing a response for you...",
+                "Generating an answer...",
+                "Composing a reply...",
+                "Working on your answer...",
+                "Creating a response...",
+                "Formulating my thoughts...",
+                "Preparing your answer...",
+                "Writing this out...",
+                "Composing my response...",
+                "Putting this together...",
+            ],
         }
 
-        action_description = action_prompts.get(action, f"The assistant is performing: {action}")
-
-        try:
-            # Use gpt-5-nano for fast, cheap generation
-            messages = [
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant that generates short, natural thinking messages. "
-                               "Generate a brief (5-10 words), conversational message that shows what the assistant is doing. "
-                               "Be warm, casual, and specific. Examples: 'Hmm, let me pull up your scores...', "
-                               "'Give me a sec to check that...', 'Looking at your profile now...'"
-                },
-                {
-                    "role": "user",
-                    "content": f"User asked: \"{user_message}\"\n\n{action_description}\n\nGenerate a short thinking message:"
-                }
+        # Get variants for this action, or use generic messages
+        variants = message_variants.get(
+            action,
+            [
+                "One moment...",
+                "Just a sec...",
+                "Working on it...",
+                "Give me a moment...",
+                "Processing...",
+                "Almost ready...",
+                "Let me check...",
+                "Thinking...",
+                "Just a moment...",
+                "On it...",
+                "Hold on...",
+                "Coming right up...",
             ]
+        )
 
-            result = await self.llm_service.generate_response_async(
-                messages=messages,
-                temperature=0.7,
-                max_tokens=20,  # Very short responses
-                model="gpt-4o-mini"  # Cheapest GPT-4 class model
-            )
-
-            message = result.get("content", "").strip()
-            # Clean up any quotes
-            message = message.strip('"\'')
-
-            return message if message else "One moment..."
-
-        except Exception as e:
-            self.logger.warning(f"Failed to generate thinking message: {e}")
-            # Fallback to simple messages
-            fallbacks = {
-                "fetch_assessment": "Let me pull up your results...",
-                "rag_search": "Searching the knowledge base...",
-                "youtube_search": "Looking for insights...",
-                "selve_web_search": "Checking the SELVE website...",
-                "memory_search": "Recalling our conversation...",
-            }
-            return fallbacks.get(action, "One moment...")
+        # Return random variant
+        return random.choice(variants)
 
     # =========================================================================
     # Main Thinking Method (Streaming)
