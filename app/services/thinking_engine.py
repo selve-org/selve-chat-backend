@@ -853,21 +853,21 @@ class ThinkingEngine:
             if plan and emit_status:
                 # Generate and emit contextual message for first action
                 first_action = plan[0].action
-                thinking_msg = await self._generate_thinking_message(first_action, message)
+                thinking_msg = self._generate_thinking_message(first_action, message)
                 yield ThinkingStatus(
-                    phase=ThinkingPhase.RETRIEVING,
+                    phase=ThinkingPhase.PLANNING,
                     message=thinking_msg,
                     details={"step": 3, "total": 4, "action": first_action},
                 ).to_dict()
             elif emit_status:
                 yield ThinkingStatus(
-                    phase=ThinkingPhase.RETRIEVING,
+                    phase=ThinkingPhase.PLANNING,
                     message="Gathering relevant information...",
                     details={"step": 3, "total": 4},
                 ).to_dict()
 
             step = ThinkingStep(
-                phase=ThinkingPhase.RETRIEVING,
+                phase=ThinkingPhase.PLANNING,
                 description="Executing plan",
             )
 
@@ -2086,7 +2086,7 @@ class ThinkingEngine:
             
             # === EXECUTE ===
             step = ThinkingStep(
-                phase=ThinkingPhase.RETRIEVING,
+                phase=ThinkingPhase.PLANNING,
                 description="Executing plan",
             )
             
