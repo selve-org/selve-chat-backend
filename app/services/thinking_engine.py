@@ -831,49 +831,80 @@ class ThinkingEngine:
                 f"(confidence: {analysis.confidence:.2f})"
             )
             
-            # === PHASE 2: PLAN ===
-            if emit_status:
-                yield ThinkingStatus(
-                    phase=ThinkingPhase.PLANNING,
-                    message="Planning response approach...",
-                    details={"step": 2, "total": 4},
-                ).to_dict()
-            
-            step = ThinkingStep(
-                phase=ThinkingPhase.PLANNING,
-                description="Creating execution plan",
-            )
-            
-            plan = self._create_plan(analysis, user_state, message)
-            step.complete(plan)
-            steps.append(step)
-            
-            # === PHASE 3: EXECUTE ===
-            # Emit contextual thinking messages for each tool action
-            if plan and emit_status:
-                # Generate and emit contextual message for first action
-                first_action = plan[0].action
-                thinking_msg = self._generate_thinking_message(first_action, message)
-                yield ThinkingStatus(
-                    phase=ThinkingPhase.PLANNING,
-                    message=thinking_msg,
-                    details={"step": 3, "total": 4, "action": first_action},
-                ).to_dict()
-            elif emit_status:
-                yield ThinkingStatus(
-                    phase=ThinkingPhase.PLANNING,
-                    message="Gathering relevant information...",
-                    details={"step": 3, "total": 4},
-                ).to_dict()
+            # === PHASE 2 & 3: PLAN & EXECUTE ===
+            # Check if agentic RAG is enabled
+            agentic_enabled = os.getenv("ENABLE_AGENTIC_RAG", "true").lower() == "true"
 
-            step = ThinkingStep(
-                phase=ThinkingPhase.PLANNING,
-                description="Executing plan",
-            )
+            if agentic_enabled:
+                # NEW: Agentic function calling approach
+                step = ThinkingStep(
+                    phase=ThinkingPhase.PLANNING,
+                    description="Agentic tool selection and execution",
+                )
 
-            execution_result = await self._execute_plan(plan, message, analysis, user_state)
-            step.complete(execution_result)
-            steps.append(step)
+                # Iterate over agentic tool loop generator to get real-time status
+                execution_result = None
+                async for item in self._agentic_tool_loop(
+                    message=message,
+                    user_state=user_state,
+                    session_id=getattr(user_state, 'session_id', 'unknown'),
+                    emit_status=emit_status,
+                ):
+                    if item.get("type") == "status":
+                        # Forward real-time status updates to user
+                        if emit_status:
+                            yield item
+                    elif item.get("type") == "result":
+                        # Final result from agentic loop
+                        execution_result = item["execution_result"]
+
+                step.complete(execution_result)
+                steps.append(step)
+
+            else:
+                # LEGACY: Keyword-based planning approach
+                if emit_status:
+                    yield ThinkingStatus(
+                        phase=ThinkingPhase.PLANNING,
+                        message="Planning response approach...",
+                        details={"step": 2, "total": 4, "mode": "keyword"},
+                    ).to_dict()
+
+                step = ThinkingStep(
+                    phase=ThinkingPhase.PLANNING,
+                    description="Creating execution plan",
+                )
+
+                plan = self._create_plan(analysis, user_state, message)
+                step.complete(plan)
+                steps.append(step)
+
+                # === PHASE 3: EXECUTE (Keyword-based) ===
+                # Emit contextual thinking messages for each tool action
+                if plan and emit_status:
+                    # Generate and emit contextual message for first action
+                    first_action = plan[0].action
+                    thinking_msg = self._generate_thinking_message(first_action, message)
+                    yield ThinkingStatus(
+                        phase=ThinkingPhase.PLANNING,
+                        message=thinking_msg,
+                        details={"step": 3, "total": 4, "action": first_action},
+                    ).to_dict()
+                elif emit_status:
+                    yield ThinkingStatus(
+                        phase=ThinkingPhase.PLANNING,
+                        message="Gathering relevant information...",
+                        details={"step": 3, "total": 4},
+                    ).to_dict()
+
+                step = ThinkingStep(
+                    phase=ThinkingPhase.PLANNING,
+                    description="Executing plan",
+                )
+
+                execution_result = await self._execute_plan(plan, message, analysis, user_state)
+                step.complete(execution_result)
+                steps.append(step)
             
             # === PHASE 4: GENERATE ===
             if emit_status:
@@ -1138,11 +1169,381 @@ class ThinkingEngine:
         plan.sort(key=lambda x: x.priority)
 
         return plan
-    
+
     # =========================================================================
-    # Execution
+    # Execution - Agentic Tool Loop (New)
     # =========================================================================
-    
+
+    async def _agentic_tool_loop(
+        self,
+        message: str,
+        user_state: Any,
+        session_id: str,
+        max_iterations: int = None,
+        emit_status: bool = True,
+    ):
+        """
+        Agentic tool execution loop using LLM function calling.
+
+        The LLM decides which tools to call based on tool definitions,
+        receives results, and can chain multiple tool calls.
+
+        Args:
+            message: User's message
+            user_state: User context (auth, assessment, etc.)
+            session_id: Session ID for memory search
+            max_iterations: Maximum tool loop iterations (default from env)
+            emit_status: Whether to yield status updates
+
+        Yields:
+            Status dicts with real-time progress updates
+            Final result dict with ExecutionResult
+        """
+        from app.tools.function_definitions import get_tool_definitions
+        from langfuse import get_client
+        import json
+
+        langfuse = get_client()
+        max_iterations = max_iterations or int(os.getenv("MAX_TOOL_ITERATIONS", "5"))
+
+        # Build conversation with system prompt
+        messages = [
+            {"role": "system", "content": self._get_agentic_system_prompt(user_state)},
+            {"role": "user", "content": message}
+        ]
+
+        # Get tool definitions based on user context
+        tools = get_tool_definitions(user_state)
+
+        result = ExecutionResult()
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+            self.logger.info(f"Agentic tool loop iteration {iteration}/{max_iterations}")
+
+            # REAL STATUS: Emit iteration start
+            if emit_status:
+                yield {
+                    "type": "status",
+                    "phase": "tool_iteration",
+                    "iteration": iteration,
+                    "max_iterations": max_iterations,
+                    "message": f"Analyzing tools ({iteration}/{max_iterations})...",
+                }
+
+            try:
+                # LLM decides which tools to call (with Langfuse tracing)
+                with langfuse.start_as_current_observation(
+                    as_type="generation",
+                    name=f"llm-tool-decision-iter-{iteration}",
+                    model=self.llm_service.model,
+                    input=json.dumps({"iteration": iteration, "num_tools": len(tools)}),
+                ) as llm_gen:
+                    response = await self.llm_service.call_with_tools(
+                        messages=messages,
+                        tools=tools,
+                        temperature=0.7,
+                        max_tokens=1500,
+                    )
+
+                    # Update Langfuse with response metadata
+                    llm_gen.update(
+                        output=json.dumps({
+                            "tool_calls": response.get("tool_calls"),
+                            "content": response.get("content")
+                        }),
+                        metadata={
+                            "provider": response.get("provider"),
+                            "model": response.get("model"),
+                        },
+                        usage={
+                            "input": response.get("usage", {}).get("input_tokens", 0),
+                            "output": response.get("usage", {}).get("output_tokens", 0),
+                            "total": response.get("usage", {}).get("total_tokens", 0),
+                        },
+                    )
+
+                # Check if LLM wants to call tools
+                tool_calls = response.get("tool_calls")
+
+                if not tool_calls:
+                    # LLM is done - no more tools to call
+                    self.logger.info("LLM finished - no more tool calls requested")
+                    if emit_status:
+                        yield {
+                            "type": "status",
+                            "phase": "tool_complete",
+                            "message": "Analysis complete, crafting response...",
+                        }
+                    break
+
+                # REAL STATUS: Emit tool calls about to be executed
+                if emit_status:
+                    tool_names = [tc["function"]["name"] for tc in tool_calls]
+                    yield {
+                        "type": "status",
+                        "phase": "calling_tools",
+                        "tools": tool_names,
+                        "message": f"Using {', '.join(tool_names)}...",
+                    }
+
+                # Execute each tool call (with Langfuse spans)
+                for idx, tool_call in enumerate(tool_calls, 1):
+                    tool_name = tool_call["function"]["name"]
+                    try:
+                        # Parse arguments (they come as JSON string)
+                        arguments = json.loads(tool_call["function"]["arguments"])
+                    except json.JSONDecodeError:
+                        arguments = {}
+
+                    self.logger.info(f"Executing tool: {tool_name} with args: {arguments}")
+
+                    # REAL STATUS: Emit individual tool execution
+                    if emit_status:
+                        yield {
+                            "type": "status",
+                            "phase": "executing_tool",
+                            "tool": tool_name,
+                            "tool_index": idx,
+                            "total_tools": len(tool_calls),
+                            "message": f"Executing {tool_name}...",
+                            "args": arguments,
+                        }
+
+                    # Execute the tool with Langfuse span
+                    tool_start = datetime.utcnow()
+                    with langfuse.start_as_current_observation(
+                        as_type="span",
+                        name=f"tool-{tool_name}",
+                        input=json.dumps(arguments),
+                        metadata={"tool_name": tool_name, "iteration": iteration},
+                    ) as tool_span:
+                        tool_result = await self._execute_tool(
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            user_state=user_state,
+                            session_id=session_id,
+                        )
+
+                        # Update span with output
+                        tool_span.update(
+                            output=json.dumps(tool_result),
+                            metadata={
+                                "status": tool_result.get("status", "unknown"),
+                                "has_context": bool(tool_result.get("context")),
+                            },
+                        )
+
+                    tool_duration = (datetime.utcnow() - tool_start).total_seconds()
+
+                    # REAL STATUS: Emit tool completion
+                    if emit_status:
+                        yield {
+                            "type": "status",
+                            "phase": "tool_executed",
+                            "tool": tool_name,
+                            "duration_seconds": round(tool_duration, 2),
+                            "status": tool_result.get("status", "unknown"),
+                            "message": f"Completed {tool_name} ({tool_duration:.1f}s)",
+                        }
+
+                    # Aggregate results into ExecutionResult
+                    self._aggregate_tool_result(result, tool_name, tool_result)
+
+                    # Add tool result to conversation
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "content": json.dumps(tool_result)
+                    })
+
+            except Exception as e:
+                self.logger.error(f"Error in agentic tool loop iteration {iteration}: {e}")
+                result.errors.append(f"Agentic loop error: {str(e)}")
+                if emit_status:
+                    yield {
+                        "type": "status",
+                        "phase": "error",
+                        "message": f"Error in tool execution: {str(e)}",
+                    }
+                break
+
+        # Yield final result
+        yield {"type": "result", "execution_result": result}
+
+    async def _execute_tool(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        user_state: Any,
+        session_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Execute a single tool call.
+
+        Args:
+            tool_name: Name of the tool to execute
+            arguments: Tool arguments
+            user_state: User context
+            session_id: Session ID
+
+        Returns:
+            Tool execution result as dict
+        """
+        try:
+            if tool_name == "rag_search":
+                query = arguments.get("query", "")
+                dimensions = arguments.get("dimensions", [])
+                return await self._execute_rag_search(query, dimensions)
+
+            elif tool_name == "youtube_search":
+                query = arguments.get("query", "")
+                max_results = arguments.get("max_results", 5)
+                result = await self._execute_youtube_search(query)
+                return result
+
+            elif tool_name == "youtube_fetch":
+                video_id = arguments.get("video_id", "")
+                include_transcript = arguments.get("include_transcript", True)
+                return await self._execute_youtube_live_fetch(video_id)
+
+            elif tool_name == "web_search":
+                query = arguments.get("query", "")
+                return await self._execute_web_search(query)
+
+            elif tool_name == "selve_web_search":
+                query = arguments.get("query", "")
+                return await self._execute_selve_web_search(query)
+
+            elif tool_name == "memory_search":
+                query = arguments.get("query", "")
+                limit = arguments.get("limit", 10)
+                if user_state and hasattr(user_state, 'user_id'):
+                    return await self._execute_memory_search(query, user_state.user_id)
+                return {"status": "error", "message": "User not logged in"}
+
+            elif tool_name == "assessment_fetch":
+                if not user_state or not hasattr(user_state, 'clerk_user_id'):
+                    return {"status": "error", "message": "User not logged in"}
+                include_narrative = arguments.get("include_narrative", True)
+                include_scores = arguments.get("include_scores", True)
+                return await self._execute_fetch_assessment(user_state.clerk_user_id, "")
+
+            elif tool_name == "assessment_compare":
+                archetype_a = arguments.get("archetype_a", "")
+                archetype_b = arguments.get("archetype_b", "")
+                # TODO: Implement comparison logic
+                return {"status": "success", "comparison": f"Comparing {archetype_a} vs {archetype_b}"}
+
+            else:
+                return {"status": "error", "message": f"Unknown tool: {tool_name}"}
+
+        except Exception as e:
+            self.logger.error(f"Tool execution error ({tool_name}): {e}")
+            return {"status": "error", "message": str(e)}
+
+    def _aggregate_tool_result(
+        self,
+        result: ExecutionResult,
+        tool_name: str,
+        tool_result: Dict[str, Any]
+    ):
+        """
+        Aggregate tool result into ExecutionResult.
+
+        Args:
+            result: ExecutionResult to update
+            tool_name: Name of the tool
+            tool_result: Tool execution result
+        """
+        if tool_name == "rag_search":
+            result.rag_context = tool_result.get("context")
+            result.rag_sources = tool_result.get("sources", [])
+
+        elif tool_name in ["youtube_search", "youtube_fetch"]:
+            result.youtube_context = tool_result.get("context")
+            result.youtube_sources = tool_result.get("sources", [])
+
+        elif tool_name == "web_search":
+            result.web_research = tool_result.get("context")
+            result.web_sources = tool_result.get("sources", [])
+
+        elif tool_name == "selve_web_search":
+            result.selve_web_context = tool_result.get("context")
+            result.selve_web_sources = tool_result.get("sources", [])
+
+        elif tool_name == "memory_search":
+            result.relevant_memories = tool_result.get("memories", [])
+
+        elif tool_name == "assessment_fetch":
+            result.assessment_data = tool_result.get("data")
+
+        elif tool_name == "assessment_compare":
+            result.assessment_comparison = tool_result.get("comparison")
+
+    def _get_agentic_system_prompt(self, user_state: Any) -> str:
+        """
+        Enhanced system prompt for agentic behavior with user context awareness.
+
+        Args:
+            user_state: User context
+
+        Returns:
+            System prompt string
+        """
+        prompt = """You are SELVE, an AI psychology assistant with access to specialized tools.
+
+**Your Mission**: Help users understand themselves through dimensional psychology.
+
+**Available Tools**: Use function calling to intelligently gather information:
+- rag_search: SELVE psychology knowledge base (dimensional psychology, archetypes)
+- youtube_search/youtube_fetch: Educational psychology videos
+- web_search: Current events, recent research, general knowledge
+- selve_web_search: Official SELVE content and information
+- memory_search: User's conversation history
+- assessment_fetch: User's personality assessment (only if logged in)
+- assessment_compare: Compare personality archetypes
+
+**User Context:**"""
+
+        if user_state and hasattr(user_state, 'clerk_user_id') and user_state.clerk_user_id:
+            prompt += f"""
+- **Logged in**: YES
+- **User ID**: {user_state.clerk_user_id}
+- **Has Assessment**: {getattr(user_state, 'has_assessment', False)}
+- **Archetype**: {getattr(user_state, 'archetype', 'Unknown')}"""
+        else:
+            prompt += "\n- **User**: Anonymous (not logged in)"
+
+        prompt += """
+
+**Critical Instructions**:
+1. Use tools to gather accurate information - NEVER hallucinate data
+2. ONLY use assessment tools if user is logged in (check user context above)
+3. Call multiple tools if needed to fully answer the question
+4. Be concise but insightful in your responses
+5. Ground responses in psychology research and SELVE's dimensional framework
+
+**Example Behavior**:
+- User asks "What's my personality type?" → If logged in: call assessment_fetch, if not: explain they need to take assessment
+- User asks "Tell me about the Explorer archetype" → call rag_search for archetype information
+- User asks "Videos about CBT" → call youtube_search
+- User asks "What did we discuss last time?" → call memory_search
+
+Always use the right tool for the task. Never claim to have information you haven't retrieved."""
+
+        return prompt
+
+    # =========================================================================
+    # Execution - Keyword-Based (Legacy Fallback)
+    # =========================================================================
+
     async def _execute_plan(
         self,
         plan: List[PlanStep],

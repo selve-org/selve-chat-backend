@@ -9,6 +9,7 @@ slowapi==0.1.9  # Rate limiting
 # LLM APIs
 openai==1.12.0
 anthropic==0.39.0
+google-generativeai==0.8.3  # Google Gemini 3 support for agentic RAG
 
 # Qdrant vector database
 qdrant-client==1.7.3
