@@ -979,28 +979,12 @@ class ThinkingEngine:
             ))
 
         # User assessment data (scores and narrative)
-        # Fetch when user asks about their scores, personality profile, or specific dimensions
-        # EXPANDED: More patterns to catch requests for narrative, results, etc.
-        assessment_keywords = [
-            # Explicit requests
-            "my score", "my scores", "what are my", "my personality", "my profile",
-            "my results", "my assessment", "my dimension", "my lumen", "my aether",
-            "my orpheus", "my vara", "my chronos", "my kael", "my orin", "my lyra",
-            "what is my", "how did i score", "my archetype", "my strengths",
-            "my growth areas", "my weaknesses",
-            # Narrative and summary requests
-            "narrative", "summary", "breakdown", "analysis", "from my assessment",
-            "from my results", "from the results", "from the assessment",
-            "the one from", "personalized", "my data", "what does my",
-            # Implicit requests
-            "tell me about myself", "what do my", "explain my", "show me my",
-            "share my", "give me my", "get my", "fetch my", "pull up my"
-        ]
-        # Also check if user has assessment - if they ask about "results" and have assessment, fetch it
-        if any(keyword in message_lower for keyword in assessment_keywords):
+        # ALWAYS fetch if user has assessment - needed for personality-aware responses
+        # This ensures the AI has access to the user's full narrative for context
+        if user_state and user_state.has_assessment:
             plan.append(PlanStep(
                 action="fetch_assessment",
-                priority=1,  # High priority - direct question about user's data
+                priority=1,  # High priority - essential personality context
                 parameters={},
             ))
 
