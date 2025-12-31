@@ -73,6 +73,28 @@ class AssessmentTool:
                 "completed_at": assessment.createdAt.isoformat() if assessment.createdAt else None,
             }
 
+            # Add quality metrics (non-personal metadata about assessment reliability)
+            if assessment.consistencyScore is not None or assessment.attentionScore is not None:
+                quality_notes = []
+                if assessment.consistencyScore is not None:
+                    if assessment.consistencyScore >= 80:
+                        quality_notes.append(f"High consistency ({assessment.consistencyScore:.0f}%)")
+                    elif assessment.consistencyScore >= 60:
+                        quality_notes.append(f"Good consistency ({assessment.consistencyScore:.0f}%)")
+                    else:
+                        quality_notes.append(f"Lower consistency ({assessment.consistencyScore:.0f}%) - results may be less reliable")
+
+                if assessment.attentionScore is not None:
+                    if assessment.attentionScore >= 90:
+                        quality_notes.append(f"Excellent attention ({assessment.attentionScore:.0f}%)")
+                    elif assessment.attentionScore >= 70:
+                        quality_notes.append(f"Good attention ({assessment.attentionScore:.0f}%)")
+                    else:
+                        quality_notes.append(f"Attention flags ({assessment.attentionScore:.0f}%) - user may have rushed")
+
+                if quality_notes:
+                    result["quality_info"] = " | ".join(quality_notes)
+
             # Include scores if requested
             if include_scores:
                 result["scores"] = {

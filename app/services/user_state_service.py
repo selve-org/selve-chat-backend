@@ -292,7 +292,10 @@ class UserState:
             parts.append(f"✅ User HAS completed their SELVE assessment")
             parts.append(f"   Archetype: {self.archetype or 'Unknown'}")
             if self.assessment_completed_at:
-                parts.append(f"   Completed: {self.assessment_completed_at.strftime('%Y-%m-%d')}")
+                when_completed = format_relative_time(self.assessment_completed_at)
+                parts.append(f"   Completed: {self.assessment_completed_at.strftime('%Y-%m-%d')} ({when_completed})")
+            if self.profile_pattern:
+                parts.append(f"   Profile Pattern: {self.profile_pattern}")
             parts.append("")
             parts.append("   NOTE: If user asks about their scores or personality details,")
             parts.append("   the system will automatically fetch their assessment data.")
@@ -309,9 +312,29 @@ class UserState:
             parts.append("")
             parts.append("### FRIEND ASSESSMENTS ###")
             parts.append(f"({len(self.friend_assessments)} friend(s) have assessed this user)")
-            
+            parts.append("(How others see them - provides external perspective on personality)")
+
             for fa in self.friend_assessments[:3]:  # Show max 3
-                parts.append(f"  • {fa.friend_name} ({fa.relationship})")
+                parts.append(f"\n  Friend: {fa.friend_name} ({fa.relationship})")
+                # Add their assessment scores
+                if fa.scores:
+                    top_dimensions = []
+                    scores_dict = {
+                        "LUMEN": fa.scores.lumen,
+                        "AETHER": fa.scores.aether,
+                        "ORPHEUS": fa.scores.orpheus,
+                        "VARA": fa.scores.vara,
+                        "CHRONOS": fa.scores.chronos,
+                        "KAEL": fa.scores.kael,
+                        "ORIN": fa.scores.orin,
+                        "LYRA": fa.scores.lyra,
+                    }
+                    # Show top 3 dimensions this friend rated highest
+                    sorted_dims = sorted(scores_dict.items(), key=lambda x: x[1], reverse=True)[:3]
+                    top_dimensions = [f"{dim}: {score:.1f}" for dim, score in sorted_dims]
+                    parts.append(f"    Top traits they see: {', '.join(top_dimensions)}")
+                if fa.notes:
+                    parts.append(f"    Notes: {fa.notes[:100]}...")
         
         # === User Notes (Persistent Observations) ===
         important_notes = [n for n in self.notes if n.importance >= 3]

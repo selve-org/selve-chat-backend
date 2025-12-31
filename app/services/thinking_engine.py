@@ -1821,6 +1821,10 @@ class ThinkingEngine:
             if assessment_data.get("profile_pattern"):
                 assessment_parts.append(f"PROFILE PATTERN: {assessment_data['profile_pattern']}")
 
+            # Add quality metrics if available
+            if assessment_data.get("quality_info"):
+                assessment_parts.append(f"ASSESSMENT QUALITY: {assessment_data['quality_info']}")
+
             # Add narrative sections
             if "narrative" in assessment_data:
                 narrative = assessment_data["narrative"]
