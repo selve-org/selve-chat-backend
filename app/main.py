@@ -167,7 +167,7 @@ app.add_middleware(
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With", "X-User-ID"],
 )
 
 # Request logging middleware with tracing
