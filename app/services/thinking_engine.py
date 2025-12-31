@@ -1568,31 +1568,54 @@ class ThinkingEngine:
                 auto_ingest=True,
             )
 
-            if result.get("error"):
-                self.logger.warning(f"YouTube fetch failed: {result.get('error')}")
+            # Check for critical errors (API failure, no transcript, etc.)
+            error = result.get("error")
+            error_code = result.get("error_code")
+
+            # If it's a critical error (not validation), return empty
+            if error and error_code in ["FEATURE_DISABLED", "FETCH_ERROR", "NO_TRANSCRIPT"]:
+                self.logger.warning(f"YouTube fetch failed: {error}")
                 return {"context": None, "sources": []}
 
-            # Format context from fetched transcript
+            # Format context from fetched transcript (even if validation failed)
             title = result.get("title", "Unknown Video")
             channel = result.get("channel", "Unknown Channel")
             validation_status = result.get("validation_status", "unknown")
             ingested = result.get("ingested", False)
             chunks_created = result.get("chunks_created", 0)
             transcript_text = result.get("transcript_text", "")
+            validation_scores = result.get("validation_scores", {})
 
-            # Create context string
+            # Create context string with validation feedback
             context_parts = [
                 f"YouTube Video: {title}",
                 f"Channel: {channel}",
-                f"Validation Status: {validation_status.upper()}",
             ]
 
-            if ingested:
-                context_parts.append(f"✅ Successfully initiated into SELVE ({chunks_created} chunks created)")
-            else:
-                context_parts.append("⚠️ Content not ingested (validation issues)")
+            if validation_status == "approved" and ingested:
+                context_parts.append(f"✅ Content validated and added to knowledge base ({chunks_created} chunks)")
+                context_parts.append("\nTranscript:")
+                context_parts.append(transcript_text[:2000] + "..." if len(transcript_text) > 2000 else transcript_text)
 
-            context_parts.append("\n" + (transcript_text[:2000] + "..." if len(transcript_text) > 2000 else transcript_text))
+            elif validation_status == "needs_revision":
+                context_parts.append("⚠️ Content fetched but needs revision before ingestion")
+                if validation_scores:
+                    context_parts.append(f"Validation scores: SELVE-aligned: {validation_scores.get('selve_aligned', 'N/A')}/10, "
+                                       f"Accuracy: {validation_scores.get('factually_accurate', 'N/A')}/10, "
+                                       f"Tone: {validation_scores.get('appropriate_tone', 'N/A')}/10")
+                context_parts.append("\nNote: This content was reviewed but doesn't fully align with SELVE's psychology framework yet.")
+
+            elif validation_status == "rejected":
+                context_parts.append("❌ Content validation failed - not suitable for SELVE knowledge base")
+                if validation_scores:
+                    context_parts.append(f"Validation scores: SELVE-aligned: {validation_scores.get('selve_aligned', 'N/A')}/10, "
+                                       f"Accuracy: {validation_scores.get('factually_accurate', 'N/A')}/10, "
+                                       f"Tone: {validation_scores.get('appropriate_tone', 'N/A')}/10")
+                context_parts.append("\nReason: This video doesn't contain psychology or personality-related content that aligns with the SELVE framework.")
+                context_parts.append("I can only analyze educational psychology content, research, or personality-related videos.")
+
+            else:
+                context_parts.append(f"Status: {validation_status}")
 
             context = "\n".join(context_parts)
 
