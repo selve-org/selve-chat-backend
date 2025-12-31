@@ -6,8 +6,8 @@ from typing import Dict, Any, Optional
 from app.db import db
 
 
-DEFAULT_ACTIVE_PLAN = os.getenv("DEFAULT_SUBSCRIPTION_PLAN", "Pro plan")
-DEFAULT_FREE_PLAN = os.getenv("DEFAULT_FREE_PLAN", "Starter plan")
+DEFAULT_ACTIVE_PLAN = os.getenv("DEFAULT_SUBSCRIPTION_PLAN", "Free plan")
+DEFAULT_FREE_PLAN = os.getenv("DEFAULT_FREE_PLAN", "Free plan")
 ASSESSMENT_URL = (
     os.getenv("ASSESSMENT_URL")
     or os.getenv("APP_URL")
