@@ -66,6 +66,13 @@ class AgentPhase(str, Enum):
     COMPLETE = "complete"
     ERROR = "error"
 
+    # Agentic tool loop phases
+    TOOL_ITERATION = "tool_iteration"
+    CALLING_TOOLS = "calling_tools"
+    EXECUTING_TOOL = "executing_tool"
+    TOOL_EXECUTED = "tool_executed"
+    TOOL_COMPLETE = "tool_complete"
+
 
 @dataclass
 class AgentStatus:
@@ -469,6 +476,12 @@ class AgenticChatService:
                                     "generating": AgentPhase.GENERATING,
                                     "complete": AgentPhase.COMPLETE,
                                     "error": AgentPhase.ERROR,
+                                    # Agentic tool loop phases
+                                    "tool_iteration": AgentPhase.TOOL_ITERATION,
+                                    "calling_tools": AgentPhase.CALLING_TOOLS,
+                                    "executing_tool": AgentPhase.EXECUTING_TOOL,
+                                    "tool_executed": AgentPhase.TOOL_EXECUTED,
+                                    "tool_complete": AgentPhase.TOOL_COMPLETE,
                                 }
 
                                 thinking_phase = item.get("phase", "")
