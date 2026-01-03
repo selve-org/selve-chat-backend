@@ -49,6 +49,9 @@ class AssessmentTool:
             Dictionary with assessment data or error message
         """
         try:
+            # Log the query for debugging
+            self.logger.info(f"🔍 Querying assessment for user_id: {user_id[:20]}...")
+            
             # Get user's most recent assessment result
             assessment = await db.assessmentresult.find_first(
                 where={
@@ -59,11 +62,14 @@ class AssessmentTool:
             )
 
             if not assessment:
+                self.logger.warning(f"❌ No assessment found for user_id: {user_id[:20]}...")
                 return {
                     "status": "not_found",
                     "message": "User has not completed the SELVE assessment yet.",
                     "has_assessment": False,
                 }
+            
+            self.logger.info(f"✅ Found assessment for user_id: {user_id[:20]}... | Profile: {assessment.profilePattern}")
 
             result = {
                 "status": "success",
