@@ -55,7 +55,7 @@ class AssessmentTool:
                     "clerkUserId": user_id,
                     "isCurrent": True,
                 },
-                order_by={"createdAt": "desc"},
+                order={"createdAt": "desc"},
             )
 
             if not assessment:
@@ -158,7 +158,7 @@ class AssessmentTool:
                     "clerkUserId": user_id,
                     "isCurrent": False,
                 },
-                order_by={"createdAt": "desc"},  # Most recent first
+                order={"createdAt": "desc"},  # Most recent first
             )
 
             if not archived:
