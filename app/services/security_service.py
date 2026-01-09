@@ -8,7 +8,6 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from app.db import db
-from app.services.user_sync_service import user_sync_service
 
 logger = logging.getLogger(__name__)
 
@@ -99,13 +98,15 @@ class SecurityService:
         # Get actual user_id from database if not provided
         if not user_id and clerk_user_id:
             try:
-                user = await user_sync_service.get_or_sync_user(clerk_user_id)
+                user = await db.user.find_unique(
+                    where={"clerkId": clerk_user_id}
+                )
                 if user:
                     user_id = user.id
                 else:
-                    logger.warning(f"User not found even after sync attempt for clerkId: {clerk_user_id}")
+                    logger.warning(f"User not found in database for clerkId: {clerk_user_id}")
             except Exception as e:
-                logger.error(f"Error fetching/syncing user: {e}")
+                logger.error(f"Error fetching user: {e}")
         
         # Check if user is currently banned
         ban_status = await self.check_ban_status(user_id, clerk_user_id, ip_address)
