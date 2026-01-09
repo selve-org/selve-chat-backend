@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 import logging
 from app.db import db
+from app.services.user_sync_service import user_sync_service
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +44,8 @@ class UsageService:
                 "subscription_plan": str
             }
         """
-        # Get user's subscription plan
-        user = await db.user.find_unique(
-            where={"clerkId": clerk_user_id}
-        )
+        # Get user from database, syncing from main SELVE if not found
+        user = await user_sync_service.get_or_sync_user(clerk_user_id)
 
         if not user:
             raise ValueError(f"User not found: {clerk_user_id}")
