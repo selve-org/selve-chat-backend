@@ -91,6 +91,7 @@ class FriendInsightsTool:
 
             friend_responses = []
             friend_response_ids = []
+            friend_metadata = []  # Names/emails only (no responses)
 
             for invite in invites:
                 if invite.friendResponse:
@@ -106,6 +107,14 @@ class FriendInsightsTool:
 
                     friend_responses.append(response_data)
                     friend_response_ids.append(invite.friendResponse.id)
+
+                    # Store metadata (name/nickname only - no assessment data)
+                    friend_name = invite.friendNickname or invite.friendEmail.split('@')[0] if invite.friendEmail else "Friend"
+                    friend_metadata.append({
+                        "name": friend_name,
+                        "relationship": invite.relationshipType or "friend",
+                        "completedAt": invite.friendResponse.completedAt.isoformat() if invite.friendResponse.completedAt else None,
+                    })
 
             if not friend_responses:
                 return {
@@ -138,6 +147,7 @@ class FriendInsightsTool:
                 "status": "success",
                 "has_friend_insights": True,
                 "friend_count": len(friend_responses),
+                "friends": friend_metadata,  # NEW: Friend names/relationships
                 "blind_spots": blind_spots,
                 "self_scores": self_scores,
                 "friend_scores": aggregated_scores,
