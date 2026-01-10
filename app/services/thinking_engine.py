@@ -170,6 +170,7 @@ class ExecutionResult:
     selve_web_sources: List[Dict[str, str]] = field(default_factory=list)
     assessment_data: Optional[Dict[str, Any]] = None  # User's assessment scores and narrative
     assessment_comparison: Optional[Dict[str, Any]] = None  # Comparison of current vs archived assessments
+    friend_insights_data: Optional[Dict[str, Any]] = None  # Friend insights and blind spots
     personality_insights: Optional[str] = None
     relevant_memories: List[Any] = field(default_factory=list)  # MemorySearchResult objects
     errors: List[str] = field(default_factory=list)
@@ -938,6 +939,7 @@ class ThinkingEngine:
                 selve_web_context=execution_result.selve_web_context,
                 assessment_data=execution_result.assessment_data,
                 assessment_comparison=execution_result.assessment_comparison,
+                friend_insights_data=execution_result.friend_insights_data,
             )
             
             # Stream response
@@ -2383,6 +2385,7 @@ Always use the right tool for the task. Never claim to have information you have
         selve_web_context: Optional[str] = None,
         assessment_data: Optional[Dict[str, Any]] = None,
         assessment_comparison: Optional[Dict[str, Any]] = None,
+        friend_insights_data: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, str]]:
         """Build message list for LLM."""
         messages = [{"role": "system", "content": system_prompt}]
@@ -2500,6 +2503,82 @@ Always use the right tool for the task. Never claim to have information you have
                 "</assessment_comparison>"
             )
 
+        # Add friend insights data if fetched
+        if friend_insights_data and friend_insights_data.get("status") == "success":
+            friend_parts = []
+
+            friend_parts.append("FRIEND INSIGHTS:")
+
+            # Add tier and invite limit information
+            user_tier = friend_insights_data.get('user_tier', 'free')
+            max_invites = friend_insights_data.get('max_invites', 15)
+            invites_sent = friend_insights_data.get('invites_sent', 0)
+            invites_remaining = friend_insights_data.get('invites_remaining', 0)
+
+            friend_parts.append(f"User Tier: {user_tier.capitalize()}")
+            friend_parts.append(f"Friend Invite Limit: {max_invites} {'(unlimited)' if max_invites >= 999 else ''}")
+            friend_parts.append(f"Invites Sent: {invites_sent}")
+            friend_parts.append(f"Invites Remaining: {invites_remaining}")
+            friend_parts.append(f"\nNumber of friends who responded: {friend_insights_data.get('friend_count', 0)}")
+
+            # Add friend names/relationships
+            if friend_insights_data.get('friends'):
+                friend_names = []
+                for friend in friend_insights_data['friends']:
+                    name = friend.get('name', 'Unknown')
+                    relationship = friend.get('relationship', 'friend')
+                    friend_names.append(f"{name} ({relationship})")
+                friend_parts.append(f"Friends who responded: {', '.join(friend_names)}")
+
+            # Add blind spots
+            blind_spots = friend_insights_data.get('blind_spots', [])
+            if blind_spots:
+                friend_parts.append(f"\nBLIND SPOTS DETECTED: {len(blind_spots)}")
+                for spot in blind_spots:
+                    dim = spot['dimension']
+                    self_score = spot['selfScore']
+                    friend_score = spot['friendScore']
+                    diff = spot['diff']
+                    spot_type = spot['type']
+
+                    if spot_type == 'underestimate':
+                        friend_parts.append(
+                            f"  • {dim}: You rate yourself {self_score:.1f}, "
+                            f"friends see you at {friend_score:.1f} (+{diff:.1f}) - "
+                            f"You may be underestimating this trait"
+                        )
+                    else:
+                        friend_parts.append(
+                            f"  • {dim}: You rate yourself {self_score:.1f}, "
+                            f"friends see you at {friend_score:.1f} ({diff:.1f}) - "
+                            f"You may be overestimating this trait"
+                        )
+            else:
+                friend_parts.append("\nNo major blind spots detected. Your self-perception aligns well with how friends see you.")
+
+            # Add comparison summary
+            if friend_insights_data.get('comparison_summary'):
+                friend_parts.append(f"\nSummary: {friend_insights_data['comparison_summary']}")
+
+            # Add narrative if available
+            if friend_insights_data.get('narrative'):
+                friend_parts.append(f"\nFriend Insights Narrative:\n{friend_insights_data['narrative']}")
+
+            if friend_parts:
+                context_parts.append(f"<friend_insights>\n{chr(10).join(friend_parts)}\n</friend_insights>")
+
+        elif friend_insights_data and friend_insights_data.get("has_friend_insights") == False:
+            # User has no friend insights yet
+            friend_count = friend_insights_data.get('friend_count', 0)
+            if friend_count == 0:
+                context_parts.append(
+                    "<friend_insights>\n"
+                    "No friends have completed the assessment yet. "
+                    "The user can invite up to 15 friends (free tier) or unlimited friends (premium tier) "
+                    "to get insights on how others perceive them.\n"
+                    "</friend_insights>"
+                )
+
         if context_parts:
             user_message = "\n\n".join(context_parts) + f"\n\nUser Question: {message}"
 
@@ -2585,6 +2664,7 @@ Always use the right tool for the task. Never claim to have information you have
                 selve_web_context=execution_result.selve_web_context,
                 assessment_data=execution_result.assessment_data,
                 assessment_comparison=execution_result.assessment_comparison,
+                friend_insights_data=execution_result.friend_insights_data,
             )
 
             # Non-streaming generation

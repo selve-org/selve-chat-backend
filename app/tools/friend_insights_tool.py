@@ -83,11 +83,31 @@ class FriendInsightsTool:
                     "has_friend_insights": False,
                 }
 
+            # Determine user tier and invite limits
+            # Check if user has active subscription (premium)
+            has_premium = False
+            try:
+                subscription = await db.subscription.find_first(
+                    where={
+                        "userId": user.id,
+                        "status": "active"
+                    }
+                )
+                has_premium = subscription is not None
+            except Exception:
+                pass  # If subscription check fails, assume free tier
+
+            user_tier = "premium" if has_premium else "free"
+            max_invites = 999 if has_premium else 15
+
             # Get friend responses via invite links
             invites = await db.invitelink.find_many(
                 where={"inviterId": user.id},
                 include={"friendResponse": True},
             )
+
+            # Count total invites sent
+            total_invites_sent = len(invites)
 
             friend_responses = []
             friend_response_ids = []
@@ -123,6 +143,10 @@ class FriendInsightsTool:
                     "friend_count": 0,
                     "message": "No friends have completed the assessment yet. Invite friends to get insights!",
                     "blind_spots": [],
+                    "user_tier": user_tier,
+                    "max_invites": max_invites,
+                    "invites_sent": total_invites_sent,
+                    "invites_remaining": max(0, max_invites - total_invites_sent),
                 }
 
             # Calculate aggregated friend scores
@@ -151,6 +175,10 @@ class FriendInsightsTool:
                 "blind_spots": blind_spots,
                 "self_scores": self_scores,
                 "friend_scores": aggregated_scores,
+                "user_tier": user_tier,
+                "max_invites": max_invites,
+                "invites_sent": total_invites_sent,
+                "invites_remaining": max(0, max_invites - total_invites_sent),
             }
 
             # Add comparison summary
