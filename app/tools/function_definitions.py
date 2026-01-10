@@ -24,7 +24,7 @@ def get_tool_definitions(user_state: Optional[Dict[str, Any]] = None) -> List[Di
             "type": "function",
             "function": {
                 "name": "rag_search",
-                "description": "Search the SELVE psychology knowledge base for information about dimensional psychology, personality archetypes, psychological concepts, and self-understanding frameworks. Use this for questions about psychology theory, personality dimensions, archetypes, and psychological insights.",
+                "description": "Search the SELVE psychology knowledge base for information about dimensional psychology, personality archetypes, psychological concepts, and self-understanding frameworks. ALWAYS use this tool when users ask about: personality theory, dimensional psychology concepts (LUMEN, AETHER, ORPHEUS, VARA, CHRONOS, KAEL, ORIN, LYRA), specific archetypes (Explorer, Architect, Guardian, Harmonizer, Visionary, Catalyst, Protector, Sage, etc.), psychological insights, self-understanding frameworks, how dimensions work, what archetypes mean, archetype characteristics, dimension definitions, personality science, or any SELVE psychology concepts. This is your PRIMARY tool for answering psychology-related questions.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -90,7 +90,7 @@ def get_tool_definitions(user_state: Optional[Dict[str, Any]] = None) -> List[Di
             "type": "function",
             "function": {
                 "name": "web_search",
-                "description": "Search the web for current information, recent research, news, or topics not covered in the SELVE knowledge base. Use this for up-to-date information, current events, or general knowledge queries.",
+                "description": "Search the web for current information, recent research, news, or topics not covered in the SELVE knowledge base. ALWAYS use this tool when users ask about: recent psychology research, current events, news, statistics, studies published after 2024, non-SELVE psychology topics, general knowledge questions, scientific findings, research papers, external psychology frameworks (Big Five, MBTI, Enneagram), therapists or psychologists, therapy techniques, mental health topics, or any information not in the SELVE knowledge base. Use this to supplement SELVE knowledge with broader psychological context.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -112,7 +112,7 @@ def get_tool_definitions(user_state: Optional[Dict[str, Any]] = None) -> List[Di
             "type": "function",
             "function": {
                 "name": "selve_web_search",
-                "description": "Search specifically for SELVE-related content on the web. Use this for official SELVE information, blog posts, or external content about SELVE's approach to psychology.",
+                "description": "Search specifically for SELVE-related content on the official SELVE website (selve.me). ALWAYS use this tool when users ask about: SELVE company information, SELVE's mission or approach, SELVE pricing or subscription plans, SELVE features, how to use SELVE, SELVE blog posts, SELVE team, SELVE partnerships, SELVE news or announcements, account or billing questions, privacy policy, terms of service, or any official SELVE business/product information not covered in the psychology knowledge base.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -166,7 +166,7 @@ def get_tool_definitions(user_state: Optional[Dict[str, Any]] = None) -> List[Di
                 "type": "function",
                 "function": {
                     "name": "assessment_fetch",
-                    "description": "Fetch the logged-in user's personality assessment results, including their archetype, dimensional scores, and narrative. ONLY use this tool when the user is logged in. Use this when users ask about 'my personality', 'my assessment', 'my archetype', or similar personal queries.",
+                    "description": "Fetch the logged-in user's complete personality assessment including archetype, 8-dimensional scores (LUMEN, AETHER, ORPHEUS, VARA, CHRONOS, KAEL, ORIN, LYRA), and full narrative profile. ONLY use when user is logged in. ALWAYS call this tool when user asks about: their personality, assessment, profile, results, archetype, scores, dimensions, numbers, ratings, how they scored, what they are, their type, comparing their results ('compared to mine', 'vs my', 'against mine', 'my own result'), showing their data ('show me mine', 'pull up my', 'grab my', 'get my'), or any personal assessment query.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -210,7 +210,7 @@ def get_tool_definitions(user_state: Optional[Dict[str, Any]] = None) -> List[Di
                 "type": "function",
                 "function": {
                     "name": "friend_insights_fetch",
-                    "description": "Fetch the logged-in user's friend insights data, including blind spots (where friends see them differently than they see themselves), aggregated friend scores vs self scores, and friend insights narrative. Use this when users ask about 'blind spots', 'how friends see me', 'friend perception', 'what do my friends think', or similar queries about external perception. ONLY use this tool when the user is logged in.",
+                    "description": "Fetch the logged-in user's friend insights including blind spots, friend names who responded, invite limits, and comparison data showing how friends perceive them vs self-perception. ONLY use when user is logged in. ALWAYS call this tool when user asks about: blind spots, how friends see them, friend perception, what friends think/said, external perception, friend feedback, friend responses, who responded to assessment, how many friends responded, friend invites, invite limits, max invites, invites remaining, friend comparison, friend vs self scores, or any query about friends' views.",
                     "parameters": {
                         "type": "object",
                         "properties": {
