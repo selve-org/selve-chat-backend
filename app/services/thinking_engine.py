@@ -1441,6 +1441,17 @@ class ThinkingEngine:
                 # TODO: Implement comparison logic
                 return {"status": "success", "comparison": f"Comparing {archetype_a} vs {archetype_b}"}
 
+            elif tool_name == "friend_insights_fetch":
+                if not user_state or not hasattr(user_state, 'clerk_user_id'):
+                    return {"status": "error", "message": "User not logged in"}
+                include_narrative = arguments.get("include_narrative", True)
+                include_individual_responses = arguments.get("include_individual_responses", False)
+                return await self._execute_fetch_friend_insights(
+                    user_state.clerk_user_id,
+                    include_narrative,
+                    include_individual_responses
+                )
+
             else:
                 return {"status": "error", "message": f"Unknown tool: {tool_name}"}
 
@@ -1487,6 +1498,9 @@ class ThinkingEngine:
         elif tool_name == "assessment_compare":
             result.assessment_comparison = tool_result.get("comparison")
 
+        elif tool_name == "friend_insights_fetch":
+            result.friend_insights_data = tool_result
+
     def _get_agentic_system_prompt(self, user_state: Any) -> str:
         """
         Enhanced system prompt for agentic behavior with user context awareness.
@@ -1509,6 +1523,7 @@ class ThinkingEngine:
 - memory_search: User's conversation history
 - assessment_fetch: User's personality assessment (only if logged in)
 - assessment_compare: Compare personality archetypes
+- friend_insights_fetch: User's friend insights and blind spots (only if logged in)
 
 **User Context:**"""
 
@@ -1532,6 +1547,8 @@ class ThinkingEngine:
 
 **Example Behavior**:
 - User asks "What's my personality type?" → If logged in: call assessment_fetch, if not: explain they need to take assessment
+- User asks "What are my blind spots?" → If logged in: call friend_insights_fetch
+- User asks "How do my friends see me?" → If logged in: call friend_insights_fetch
 - User asks "Tell me about the Explorer archetype" → call rag_search for archetype information
 - User asks "Videos about CBT" → call youtube_search
 - User asks "What did we discuss last time?" → call memory_search
@@ -2166,6 +2183,56 @@ Always use the right tool for the task. Never claim to have information you have
         except Exception as e:
             self.logger.warning(f"Assessment fetch failed: {e}")
             return {"data": None}
+
+    async def _execute_fetch_friend_insights(
+        self,
+        user_id: str,
+        include_narrative: bool = True,
+        include_individual_responses: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Fetch user's friend insights data including blind spots.
+
+        This fetches:
+        - Blind spots (where friends see user differently)
+        - Aggregated friend scores vs self scores
+        - Friend insights narrative summary
+        - Number of friends who responded
+
+        Args:
+            user_id: User's Clerk ID
+            include_narrative: Include friend insights narrative
+            include_individual_responses: Include individual friend responses
+
+        Returns:
+            Dict with friend insights data
+        """
+        try:
+            from app.tools.friend_insights_tool import FriendInsightsTool
+
+            tool = FriendInsightsTool()
+
+            # Fetch friend insights data
+            result = await tool.get_user_friend_insights(
+                user_id=user_id,
+                include_narrative=include_narrative,
+                include_individual_responses=include_individual_responses,
+            )
+
+            if result.get("status") == "success":
+                self.logger.info(f"✅ Fetched friend insights for user {user_id[:8]}... ({result.get('friend_count', 0)} friends, {len(result.get('blind_spots', []))} blind spots)")
+                return result
+            else:
+                self.logger.info(f"No friend insights found for user {user_id[:8]}... ({result.get('message', 'Unknown reason')})")
+                return result
+
+        except Exception as e:
+            self.logger.warning(f"Friend insights fetch failed: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to fetch friend insights: {str(e)}",
+                "has_friend_insights": False,
+            }
 
     async def _execute_compare_assessments(
         self,

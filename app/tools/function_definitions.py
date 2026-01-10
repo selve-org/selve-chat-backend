@@ -206,6 +206,29 @@ def get_tool_definitions(user_state: Optional[Dict[str, Any]] = None) -> List[Di
                     }
                 }
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "friend_insights_fetch",
+                    "description": "Fetch the logged-in user's friend insights data, including blind spots (where friends see them differently than they see themselves), aggregated friend scores vs self scores, and friend insights narrative. Use this when users ask about 'blind spots', 'how friends see me', 'friend perception', 'what do my friends think', or similar queries about external perception. ONLY use this tool when the user is logged in.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "include_narrative": {
+                                "type": "boolean",
+                                "description": "Include the friend insights narrative summary (default: true)",
+                                "default": True
+                            },
+                            "include_individual_responses": {
+                                "type": "boolean",
+                                "description": "Include individual friend response details (default: false)",
+                                "default": False
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
         ])
 
     return tools
