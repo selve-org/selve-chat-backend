@@ -174,6 +174,7 @@ class ExecutionResult:
     personality_insights: Optional[str] = None
     relevant_memories: List[Any] = field(default_factory=list)  # MemorySearchResult objects
     errors: List[str] = field(default_factory=list)
+    tools_used: List[str] = field(default_factory=list)  # Track all tools called
 
 
 @dataclass
@@ -1015,6 +1016,8 @@ class ThinkingEngine:
                     details={
                         "sources": all_sources,
                         "intent": analysis.intent.value,
+                        "tools_used": execution_result.tools_used,  # Track all tools called
+                        "tools_count": len(execution_result.tools_used),  # Total tools used
                     },
                 ).to_dict()
             
@@ -1352,6 +1355,10 @@ class ThinkingEngine:
 
                     # Aggregate results into ExecutionResult
                     self._aggregate_tool_result(result, tool_name, tool_result)
+
+                    # Track tool usage
+                    if tool_name not in result.tools_used:
+                        result.tools_used.append(tool_name)
 
                     # Add tool result to conversation
                     messages.append({

@@ -436,6 +436,8 @@ class AgenticChatService:
                     if AgentConfig.THINKING_ENGINE_ENABLED:
                         response_chunks = []
                         sources = []
+                        tools_used = []
+                        tools_count = 0
                         user_intent = "unknown"
                         stream_metadata = None  # Capture metadata for Langfuse
 
@@ -497,6 +499,10 @@ class AgenticChatService:
                                     sources = item["details"]["sources"]
                                 if item.get("details", {}).get("intent"):
                                     user_intent = item["details"]["intent"]
+                                if item.get("details", {}).get("tools_used"):
+                                    tools_used = item["details"]["tools_used"]
+                                if item.get("details", {}).get("tools_count") is not None:
+                                    tools_count = item["details"]["tools_count"]
 
                             elif isinstance(item, str):
                                 # Response chunk
@@ -515,8 +521,10 @@ class AgenticChatService:
                     
                         for char in full_response:
                             yield char
-                    
+
                         sources = []
+                        tools_used = []
+                        tools_count = 0
                         user_intent = "unknown"
                 
                     # =================================================================
@@ -599,7 +607,9 @@ class AgenticChatService:
                         "output": full_response,
                         "metadata": {
                             "intent": user_intent,
-                            "sources_count": len(sources),
+                            "sources_count": len(sources),  # Citation sources (RAG, web, YouTube, SELVE web)
+                            "tools_used": tools_used,  # All tools called (including assessment_fetch, friend_insights_fetch, etc.)
+                            "tools_count": tools_count,  # Total number of tools used
                             "security_blocked": False,
                         }
                     }

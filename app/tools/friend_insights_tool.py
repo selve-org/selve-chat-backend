@@ -115,15 +115,15 @@ class FriendInsightsTool:
 
             for invite in invites:
                 if invite.friendResponse:
+                    # ALWAYS include responses for internal calculations (aggregated scores, blind spots)
+                    # but we'll control whether they're returned to caller via include_individual_responses
                     response_data = {
                         "id": invite.friendResponse.id,
                         "qualityScore": invite.friendResponse.qualityScore,
                         "completedAt": invite.friendResponse.completedAt.isoformat() if invite.friendResponse.completedAt else None,
+                        "responses": invite.friendResponse.responses,  # ALWAYS include for calculations
+                        "totalTime": invite.friendResponse.totalTime,  # ALWAYS include for calculations
                     }
-
-                    if include_individual_responses:
-                        response_data["responses"] = invite.friendResponse.responses
-                        response_data["totalTime"] = invite.friendResponse.totalTime
 
                     friend_responses.append(response_data)
                     friend_response_ids.append(invite.friendResponse.id)
