@@ -39,6 +39,32 @@ class ThinkingConfig:
     RAG_ENABLED: bool = True
     WEB_SEARCH_ENABLED: bool = os.getenv("WEB_SEARCH_ENABLED", "false").lower() == "true"
     YOUTUBE_SEARCH_ENABLED: bool = os.getenv("YOUTUBE_SEARCH_ENABLED", "false").lower() == "true"
+
+
+# Tool name aliases - Maps internal tool names to user-friendly display names
+TOOL_DISPLAY_NAMES = {
+    "rag_search": "Searching knowledge base",
+    "youtube_search": "Searching YouTube",
+    "youtube_fetch": "Fetching video content",
+    "web_search": "Searching the web",
+    "selve_web_search": "Searching SELVE content",
+    "memory_search": "Searching your history",
+    "assessment_fetch": "Loading your assessment",
+    "assessment_compare": "Comparing assessments",
+    "friend_insights_fetch": "Loading friend insights",
+}
+
+
+def get_tool_display_name(tool_name: str) -> str:
+    """Get user-friendly display name for a tool.
+    
+    Args:
+        tool_name: Internal tool name (e.g., 'youtube_search')
+        
+    Returns:
+        User-friendly display name (e.g., 'Searching YouTube')
+    """
+    return TOOL_DISPLAY_NAMES.get(tool_name, tool_name.replace('_', ' ').title())
     
     # Response settings
     MAX_THINKING_STEPS: int = 5
@@ -1286,11 +1312,12 @@ class ThinkingEngine:
                 # REAL STATUS: Emit tool calls about to be executed
                 if emit_status:
                     tool_names = [tc["function"]["name"] for tc in tool_calls]
+                    display_names = [get_tool_display_name(name) for name in tool_names]
                     yield {
                         "type": "status",
                         "phase": "calling_tools",
                         "tools": tool_names,
-                        "message": f"Using {', '.join(tool_names)}...",
+                        "message": f"Using {', '.join(display_names)}...",
                     }
 
                 # Execute each tool call (with Langfuse spans)
@@ -1306,13 +1333,14 @@ class ThinkingEngine:
 
                     # REAL STATUS: Emit individual tool execution
                     if emit_status:
+                        display_name = get_tool_display_name(tool_name)
                         yield {
                             "type": "status",
                             "phase": "executing_tool",
                             "tool": tool_name,
                             "tool_index": idx,
                             "total_tools": len(tool_calls),
-                            "message": f"Executing {tool_name}...",
+                            "message": display_name,
                             "args": arguments,
                         }
 
@@ -1344,13 +1372,14 @@ class ThinkingEngine:
 
                     # REAL STATUS: Emit tool completion
                     if emit_status:
+                        display_name = get_tool_display_name(tool_name)
                         yield {
                             "type": "status",
                             "phase": "tool_executed",
                             "tool": tool_name,
                             "duration_seconds": round(tool_duration, 2),
                             "status": tool_result.get("status", "unknown"),
-                            "message": f"Completed {tool_name} ({tool_duration:.1f}s)",
+                            "message": f"Completed {display_name.lower()} ({tool_duration:.1f}s)",
                         }
 
                     # Aggregate results into ExecutionResult
