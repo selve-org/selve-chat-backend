@@ -1645,6 +1645,9 @@ To access PAST conversations, you MUST call memory_search.
 
 CRITICAL:
 - ALWAYS use tools to gather information - NEVER hallucinate data
+- NEVER say "I don't have access" or "I can't" without FIRST trying the relevant tool
+- If user asks about past conversations, you MUST call memory_search FIRST, then report results
+- Even if you think there might be no data, CALL THE TOOL FIRST and let the data speak
 - Call MULTIPLE tools if needed to fully answer the question
 - rag_search is your PRIMARY tool for psychology questions
 - If you need user's personal data, ALWAYS call assessment_fetch or friend_insights_fetch first"""
