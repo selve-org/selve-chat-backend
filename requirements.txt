@@ -12,7 +12,8 @@ anthropic==0.39.0
 google-generativeai==0.8.3  # Google Gemini 3 support for agentic RAG
 
 # Qdrant vector database
-qdrant-client==1.7.3
+# Compatible with Qdrant server 1.16.x
+qdrant-client>=1.12.0,<2.0.0
 
 # Environment and config
 python-dotenv==1.0.0

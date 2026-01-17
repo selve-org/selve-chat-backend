@@ -25,6 +25,22 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+
+def number_to_words(n: int) -> str:
+    """Convert a number to its word representation (1-20)."""
+    words = {
+        1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+        6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten",
+        11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen", 15: "fifteen",
+        16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen", 20: "twenty"
+    }
+    return words.get(n, str(n))
+
+
+# =============================================================================
 # CONFIGURATION
 # =============================================================================
 
@@ -1255,12 +1271,13 @@ class ThinkingEngine:
 
             # REAL STATUS: Emit iteration start
             if emit_status:
+                iteration_word = number_to_words(iteration)
                 yield {
                     "type": "status",
                     "phase": "tool_iteration",
                     "iteration": iteration,
                     "max_iterations": max_iterations,
-                    "message": f"Analyzing tools ({iteration}/{max_iterations})...",
+                    "message": f"Analyzing tools (iteration {iteration_word})...",
                 }
 
             try:

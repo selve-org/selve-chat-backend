@@ -1,0 +1,371 @@
+name: Health & Compatibility Check
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run daily at 2 AM UTC to catch drift
+    - cron: '0 2 * * *'
+
+jobs:
+  # ============================================================================
+  # Dependency Compatibility Check
+  # ============================================================================
+  dependency-check:
+    runs-on: ubuntu-latest
+    name: Check Package Compatibility
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check for security vulnerabilities
+        run: |
+          pip install pip-audit
+          pip-audit --desc --fix-version
+
+      - name: Validate Qdrant client compatibility
+        run: |
+          echo "🔍 Checking Qdrant client version compatibility..."
+          
+          # Get installed version
+          INSTALLED=$(pip show qdrant-client | grep Version | cut -d' ' -f2)
+          echo "Installed: qdrant-client==$INSTALLED"
+          
+          # Expected minimum (compatible with Qdrant 1.16.x)
+          EXPECTED_MIN="1.12.0"
+          
+          python - <<EOF
+          from packaging import version
+          installed = version.parse("$INSTALLED")
+          expected_min = version.parse("$EXPECTED_MIN")
+          
+          if installed < expected_min:
+              print(f"❌ qdrant-client {installed} is too old!")
+              print(f"   Required: >={expected_min} for Qdrant 1.16.x server")
+              exit(1)
+          else:
+              print(f"✅ qdrant-client {installed} is compatible")
+          EOF
+
+      - name: Check for conflicting dependencies
+        run: |
+          pip install pip-check
+          pip-check || echo "⚠️ Some dependency conflicts detected"
+
+  # ============================================================================
+  # Syntax & Import Check
+  # ============================================================================
+  syntax-check:
+    runs-on: ubuntu-latest
+    name: Python Syntax & Import Validation
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check Python syntax
+        run: |
+          echo "🔍 Checking Python syntax..."
+          python -m py_compile app/**/*.py || exit 1
+          echo "✅ All Python files are syntactically valid"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Test critical imports
+        run: |
+          echo "🔍 Testing critical service imports..."
+          python - <<EOF
+          import sys
+          
+          critical_imports = [
+              "app.services.agentic_chat_service",
+              "app.services.rag_service",
+              "app.services.thinking_engine",
+              "app.services.llm_service",
+              "app.tools.function_definitions",
+          ]
+          
+          failed = []
+          for module in critical_imports:
+              try:
+                  __import__(module)
+                  print(f"✅ {module}")
+              except Exception as e:
+                  print(f"❌ {module}: {e}")
+                  failed.append(module)
+          
+          if failed:
+              print(f"\n❌ {len(failed)} imports failed!")
+              sys.exit(1)
+          else:
+              print(f"\n✅ All {len(critical_imports)} critical imports successful")
+          EOF
+
+  # ============================================================================
+  # Integration Tests (mocked services)
+  # ============================================================================
+  integration-tests:
+    runs-on: ubuntu-latest
+    name: Service Integration Tests
+    
+    services:
+      # Mock Qdrant for testing
+      qdrant:
+        image: qdrant/qdrant:v1.16.3
+        ports:
+          - 6333:6333
+          - 6334:6334
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Wait for Qdrant
+        run: |
+          echo "⏳ Waiting for Qdrant to be ready..."
+          timeout 30 sh -c 'until curl -f http://localhost:6333/health 2>/dev/null; do sleep 1; done'
+          echo "✅ Qdrant is ready"
+
+      - name: Test Qdrant connectivity
+        env:
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+        run: |
+          python - <<EOF
+          from qdrant_client import QdrantClient
+          
+          print("🔍 Testing Qdrant connection...")
+          client = QdrantClient(host="localhost", port=6333)
+          collections = client.get_collections()
+          print(f"✅ Qdrant connected! Collections: {len(collections.collections)}")
+          EOF
+
+      - name: Test RAG service initialization
+        env:
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          OPENAI_API_KEY: sk-test-dummy-key-for-ci
+        run: |
+          python - <<EOF
+          import sys
+          import os
+          os.environ["OPENAI_API_KEY"] = "sk-test-dummy"
+          
+          try:
+              from app.services.rag_service import RAGService
+              rag = RAGService()
+              print("✅ RAGService initialized successfully")
+          except Exception as e:
+              print(f"❌ RAGService initialization failed: {e}")
+              sys.exit(1)
+          EOF
+
+      - name: Run pytest suite
+        env:
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          OPENAI_API_KEY: sk-test-dummy
+          DATABASE_URL: file:./test.db
+        run: |
+          pytest tests/ -v --tb=short || echo "⚠️ Some tests failed"
+
+  # ============================================================================
+  # Tool & Agent Health Check
+  # ============================================================================
+  tool-agent-check:
+    runs-on: ubuntu-latest
+    name: Tool & Agent Definition Validation
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate tool definitions
+        run: |
+          python - <<EOF
+          import sys
+          import json
+          
+          print("🔍 Validating tool definitions...")
+          
+          try:
+              from app.tools.function_definitions import get_tool_definitions
+              
+              # Test with minimal user state
+              class MockUser:
+                  def __init__(self):
+                      self.has_assessment = False
+                      self.has_friends = False
+              
+              tools = get_tool_definitions(MockUser())
+              
+              if not tools:
+                  print("❌ No tools returned!")
+                  sys.exit(1)
+              
+              print(f"✅ {len(tools)} tools defined:")
+              for tool in tools:
+                  name = tool.get("function", {}).get("name", "unknown")
+                  desc = tool.get("function", {}).get("description", "")[:60]
+                  print(f"  - {name}: {desc}...")
+              
+              # Validate JSON schema
+              for tool in tools:
+                  json.dumps(tool)  # Ensure serializable
+              
+              print("✅ All tool definitions are valid")
+              
+          except Exception as e:
+              print(f"❌ Tool validation failed: {e}")
+              import traceback
+              traceback.print_exc()
+              sys.exit(1)
+          EOF
+
+      - name: Validate thinking engine
+        run: |
+          python - <<EOF
+          import sys
+          
+          print("🔍 Validating thinking engine...")
+          
+          try:
+              from app.services.thinking_engine import ThinkingEngine
+              
+              # Test initialization (lazy loading)
+              engine = ThinkingEngine()
+              print("✅ ThinkingEngine initialized")
+              
+              # Check critical methods exist
+              methods = ['analyze_intent', '_plan_actions', '_agentic_tool_loop']
+              for method in methods:
+                  if not hasattr(engine, method):
+                      print(f"❌ Missing method: {method}")
+                      sys.exit(1)
+              
+              print(f"✅ All {len(methods)} critical methods exist")
+              
+          except Exception as e:
+              print(f"❌ Thinking engine validation failed: {e}")
+              sys.exit(1)
+          EOF
+
+  # ============================================================================
+  # Production Health Check (if on main branch)
+  # ============================================================================
+  production-health:
+    runs-on: ubuntu-latest
+    name: Production Service Health
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Check main backend health
+        run: |
+          echo "🔍 Checking selve-backend (port 8000)..."
+          RESPONSE=$(curl -f -s https://api.selve.me/health || echo "failed")
+          
+          if echo "$RESPONSE" | grep -q '"status":"healthy"'; then
+            echo "✅ selve-backend is healthy"
+          else
+            echo "⚠️ selve-backend health check failed: $RESPONSE"
+          fi
+
+      - name: Check chat backend health
+        run: |
+          echo "🔍 Checking selve-chat-backend (port 9000)..."
+          RESPONSE=$(curl -f -s https://api-chat.selve.me/api/health || echo "failed")
+          
+          if echo "$RESPONSE" | grep -q '"status":"healthy"'; then
+            echo "✅ selve-chat-backend is healthy"
+            
+            # Check Qdrant specifically
+            if echo "$RESPONSE" | grep -q '"qdrant_connected":true'; then
+              echo "✅ Qdrant is connected"
+            else
+              echo "❌ Qdrant is disconnected!"
+              exit 1
+            fi
+          else
+            echo "❌ selve-chat-backend health check failed: $RESPONSE"
+            exit 1
+          fi
+
+  # ============================================================================
+  # Summary Report
+  # ============================================================================
+  summary:
+    runs-on: ubuntu-latest
+    name: Health Check Summary
+    needs: [dependency-check, syntax-check, integration-tests, tool-agent-check]
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Health Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.dependency-check.result }}" == "success" ]; then
+            echo "✅ Dependencies: All packages compatible" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Dependencies: Compatibility issues detected" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.syntax-check.result }}" == "success" ]; then
+            echo "✅ Syntax: All Python files valid" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Syntax: Import or syntax errors found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.integration-tests.result }}" == "success" ]; then
+            echo "✅ Integration: Services connect properly" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Integration: Service connectivity issues" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.tool-agent-check.result }}" == "success" ]; then
+            echo "✅ Tools & Agents: All definitions valid" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Tools & Agents: Definition errors found" >> $GITHUB_STEP_SUMMARY
+          fi

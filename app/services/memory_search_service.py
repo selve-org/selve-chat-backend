@@ -352,13 +352,17 @@ class MemorySearchService(BaseService):
                 ]
             )
 
-            # Search in Qdrant
-            results = self.qdrant.search(
+            # Search in Qdrant (using query_points for qdrant-client >=1.12.0)
+            search_result = self.qdrant.query_points(
                 collection_name=self.COLLECTION_NAME,
-                query_vector=query_embedding,
+                query=query_embedding,
                 limit=top_k,
                 query_filter=search_filter,
+                score_threshold=score_threshold,
+                with_payload=True,
             )
+            # Extract points from QueryResponse
+            results = search_result.points if hasattr(search_result, 'points') else search_result
 
             # Convert to MemorySearchResult objects
             memories: List[MemorySearchResult] = []
@@ -457,12 +461,16 @@ class MemorySearchService(BaseService):
                 ]
             )
 
-            results = self.qdrant.search(
+            # Search for related memories (using query_points for qdrant-client >=1.12.0)
+            search_result = self.qdrant.query_points(
                 collection_name=self.COLLECTION_NAME,
-                query_vector=memory_points[0].vector,
+                query=memory_points[0].vector,
                 limit=top_k + 1,  # +1 to account for self
                 query_filter=search_filter,
+                with_payload=True,
             )
+            # Extract points from QueryResponse
+            results = search_result.points if hasattr(search_result, 'points') else search_result
 
             # Filter out the original memory
             memories: List[MemorySearchResult] = []
