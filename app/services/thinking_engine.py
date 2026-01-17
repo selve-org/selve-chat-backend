@@ -1633,8 +1633,15 @@ class ThinkingEngine:
 - "SELVE's privacy policy" → call selve_web_search
 
 **Conversation History (Memory Search):**
+IMPORTANT: The conversation_history you receive only contains the CURRENT session.
+To access PAST conversations, you MUST call memory_search.
 - "What did we discuss last time?" → call memory_search
 - "Remind me what I asked about" → call memory_search
+- "Check other conversations" → call memory_search
+- "Then check other conversations" → call memory_search
+- "What have we talked about before?" → call memory_search
+- "Look at our past conversations" → call memory_search
+- "Do you remember our previous chats?" → call memory_search
 
 CRITICAL:
 - ALWAYS use tools to gather information - NEVER hallucinate data

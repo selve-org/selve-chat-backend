@@ -129,7 +129,7 @@ def get_tool_definitions(user_state: Optional[Dict[str, Any]] = None) -> List[Di
             "type": "function",
             "function": {
                 "name": "memory_search",
-                "description": "Search the user's conversation history for previous discussions, questions, or topics. Use this to recall past conversations, reference earlier topics, or provide context-aware responses based on conversation history.",
+                "description": "Search through the user's PREVIOUS conversations (episodic memories from past chat sessions) to recall what was discussed before. CRITICAL: The conversation_history you receive only contains the CURRENT session - THIS tool accesses PAST conversations. ALWAYS call this tool when user asks about: other conversations, past conversations, previous chats, check other conversations, what we talked about before, conversation history, earlier discussions, last time we talked, look at past chats, check past conversations, our history, what did I ask before, previous sessions, things we discussed before, topics from earlier, check history, or any reference to past interactions beyond the current session. Searches compressed episodic memory summaries stored in vector database.",
                 "parameters": {
                     "type": "object",
                     "properties": {
