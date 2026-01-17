@@ -123,6 +123,7 @@ class UserProfileService:
                 "clerk_user_id": clerk_user_id,
                 "user_name": user_name,
                 "email": user.email,
+                "profile_picture": user.profilePicture,
                 "has_assessment": has_assessment,
                 "subscription_plan": subscription_plan,
             }

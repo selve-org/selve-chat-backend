@@ -1,10 +1,12 @@
 """
 User API Router - Fetch user profiles and SELVE scores
 """
-from fastapi import APIRouter, HTTPException, Header, status
+from fastapi import APIRouter, HTTPException, Header, status, Request
 from typing import Optional
+from pydantic import BaseModel
 from app.services.user_profile_service import UserProfileService
 from app.services.usage_service import usage_service
+from app.db import db
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -205,4 +207,85 @@ async def get_user_usage(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching usage: {str(e)}"
+        )
+
+
+class UserSyncRequest(BaseModel):
+    """Request model for syncing user data from main backend"""
+    clerk_id: str
+    name: Optional[str] = None
+    profile_picture: Optional[str] = None
+
+
+@router.post("/sync")
+async def sync_user_data(
+    request: UserSyncRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+):
+    """
+    Sync user data from main backend to chat backend
+    
+    **Headers Required**:
+    - X-User-ID: Clerk user ID (for authentication)
+    
+    **Request Body**:
+    - clerk_id: Clerk user ID
+    - name: Updated name (optional)
+    - profile_picture: Updated profile picture URL (optional)
+    
+    **Returns**:
+    - success: Whether sync succeeded
+    """
+    # Verify authentication
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Missing X-User-ID header."
+        )
+    
+    if x_user_id != request.clerk_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot sync another user's data"
+        )
+    
+    try:
+        # Find user in chat backend database
+        user = await db.user.find_first(
+            where={"clerkId": request.clerk_id}
+        )
+        
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found in chat backend"
+            )
+        
+        # Prepare update data
+        update_data = {}
+        if request.name is not None:
+            update_data["name"] = request.name
+        if request.profile_picture is not None:
+            update_data["profilePicture"] = request.profile_picture
+        
+        if not update_data:
+            return {"success": True, "message": "No data to sync"}
+        
+        # Update user in chat backend
+        await db.user.update(
+            where={"clerkId": request.clerk_id},
+            data=update_data
+        )
+        
+        return {
+            "success": True,
+            "message": "User data synced successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error syncing user data: {str(e)}"
         )
