@@ -1315,17 +1315,30 @@ class ThinkingEngine:
                 if "memory_search" not in result.tools_used:
                     result.tools_used.append("memory_search")
 
-                # Add result to conversation for LLM context
-                messages.append({
-                    "role": "assistant",
-                    "content": f"I searched your conversation history. Found {len(result.relevant_memories)} relevant past conversations."
-                })
-                messages.append({
-                    "role": "user",
-                    "content": "Based on those results, please answer my question about past conversations."
-                })
+                # Format memory results for LLM context
+                if result.relevant_memories:
+                    memory_context = "\n\n=== PREVIOUS CONVERSATIONS FOUND ===\n\n"
+                    for i, mem in enumerate(result.relevant_memories, 1):
+                        memory_context += f"**Conversation {i}:**\n"
+                        memory_context += f"- Title: {mem.get('title', 'Untitled')}\n"
+                        memory_context += f"- Summary: {mem.get('summary', 'No summary')}\n"
+                        if mem.get('key_insights'):
+                            memory_context += f"- Key Insights: {', '.join(mem['key_insights'][:3])}\n"
+                        memory_context += f"- Date: {mem.get('span_end', 'Unknown')[:10]}\n\n"
 
-                self.logger.info(f"✅ Forced memory search found {len(result.relevant_memories)} memories")
+                    memory_context += "===\n\nUse these past conversations to answer the user's question."
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": memory_context
+                    })
+                    self.logger.info(f"✅ Forced memory search found {len(result.relevant_memories)} memories - injected into context")
+                else:
+                    messages.append({
+                        "role": "assistant",
+                        "content": "I searched your conversation history but found no previous conversations. This appears to be your first chat with me, or your previous conversations haven't been compressed into memories yet (this happens automatically after longer conversations)."
+                    })
+                    self.logger.info("✅ Forced memory search completed - no memories found")
 
             try:
                 # LLM decides which tools to call (with Langfuse tracing)
