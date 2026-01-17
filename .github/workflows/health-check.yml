@@ -171,7 +171,7 @@ jobs:
 
           # Give Qdrant more time to start up (60 seconds instead of 30)
           for i in {1..60}; do
-            if curl -f http://localhost:6333/health 2>/dev/null; then
+            if curl -f http://localhost:6333/ 2>/dev/null; then
               echo "✅ Qdrant is ready after $i seconds"
               exit 0
             fi
@@ -190,7 +190,7 @@ jobs:
           echo "Debug: Checking port status..."
           nc -zv localhost 6333 2>&1 || echo "Port 6333 not listening"
           echo "Debug: Trying direct curl..."
-          curl -v http://localhost:6333/health || true
+          curl -v http://localhost:6333/ || true
           exit 1
 
       - name: Test Qdrant connectivity
