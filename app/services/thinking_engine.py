@@ -1265,6 +1265,22 @@ class ThinkingEngine:
         result = ExecutionResult()
         iteration = 0
 
+        # FORCED TOOL CALL: If user explicitly asks about past conversations,
+        # force memory_search to be called FIRST (prevent LLM from hallucinating "I can't")
+        forced_memory_search = False
+        memory_keywords = [
+            "check other conversation", "past conversation", "previous conversation",
+            "other conversation", "conversation history", "earlier discussion",
+            "last time we talked", "what we talked about before", "previous chat",
+            "our history", "check history", "previous session"
+        ]
+        message_lower = message.lower()
+        if any(keyword in message_lower for keyword in memory_keywords):
+            # User is asking about past conversations - FORCE memory_search call
+            if user_state and hasattr(user_state, 'user_id') and user_state.user_id:
+                self.logger.info(f"🔍 FORCED MEMORY SEARCH triggered by keywords in: {message[:50]}...")
+                forced_memory_search = True
+
         while iteration < max_iterations:
             iteration += 1
             self.logger.info(f"Agentic tool loop iteration {iteration}/{max_iterations}")
@@ -1279,6 +1295,37 @@ class ThinkingEngine:
                     "max_iterations": max_iterations,
                     "message": f"Analyzing tools (iteration {iteration_word})...",
                 }
+
+            # EXECUTE FORCED MEMORY SEARCH if triggered
+            if forced_memory_search and iteration == 1:
+                self.logger.info("⚡ Executing FORCED memory_search call")
+                if emit_status:
+                    yield {
+                        "type": "status",
+                        "phase": "calling_tools",
+                        "tools": ["memory_search"],
+                        "message": "Searching your history...",
+                    }
+
+                # Execute memory search
+                memory_result = await self._execute_memory_search(message, user_state.user_id)
+                result.relevant_memories = memory_result.get("memories", [])
+
+                # Track tool usage
+                if "memory_search" not in result.tools_used:
+                    result.tools_used.append("memory_search")
+
+                # Add result to conversation for LLM context
+                messages.append({
+                    "role": "assistant",
+                    "content": f"I searched your conversation history. Found {len(result.relevant_memories)} relevant past conversations."
+                })
+                messages.append({
+                    "role": "user",
+                    "content": "Based on those results, please answer my question about past conversations."
+                })
+
+                self.logger.info(f"✅ Forced memory search found {len(result.relevant_memories)} memories")
 
             try:
                 # LLM decides which tools to call (with Langfuse tracing)
