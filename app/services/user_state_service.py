@@ -21,11 +21,18 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-def format_relative_time(timestamp: datetime) -> str:
+def format_relative_time(timestamp: datetime, include_exact: bool = False) -> str:
     """
     Convert a timestamp to human-readable relative time.
 
-    Examples: "2 hours ago", "3 days ago", "last week", "2 months ago"
+    Args:
+        timestamp: The datetime to format
+        include_exact: If True, also include the exact date/time after the relative time
+
+    Examples:
+        - "2 hours ago"
+        - "3 days ago"
+        - "2 months ago - January 15, 2026 at 14:32"
     """
     from datetime import timezone
 
@@ -43,61 +50,68 @@ def format_relative_time(timestamp: datetime) -> str:
     if seconds < 3600:  # Less than 1 hour
         minutes = int(seconds / 60)
         if minutes == 0:
-            return "just now"
+            relative = "just now"
         elif minutes == 1:
-            return "1 minute ago"
+            relative = "1 minute ago"
         else:
-            return f"{minutes} minutes ago"
+            relative = f"{minutes} minutes ago"
 
     elif seconds < 86400:  # Less than 1 day
         hours = int(seconds / 3600)
         if hours == 1:
-            return "1 hour ago"
+            relative = "1 hour ago"
         else:
-            return f"{hours} hours ago"
+            relative = f"{hours} hours ago"
 
     elif seconds < 604800:  # Less than 1 week
         days = int(seconds / 86400)
         if days == 1:
-            return "yesterday"
+            relative = "yesterday"
         elif days < 7:
-            return f"{days} days ago"
+            relative = f"{days} days ago"
         else:
-            return "last week"
+            relative = "last week"
 
     elif seconds < 2592000:  # Less than 30 days
         weeks = int(seconds / 604800)
         if weeks == 1:
-            return "last week"
+            relative = "last week"
         elif weeks == 2:
-            return "2 weeks ago"
+            relative = "2 weeks ago"
         elif weeks == 3:
-            return "3 weeks ago"
+            relative = "3 weeks ago"
         else:
-            return "last month"
+            relative = "last month"
 
     elif seconds < 7776000:  # Less than 90 days (3 months)
         months = int(seconds / 2592000)
         if months == 1:
-            return "last month"
+            relative = "last month"
         else:
-            return f"{months} months ago"
+            relative = f"{months} months ago"
 
     elif seconds < 31536000:  # Less than 1 year
         months = int(seconds / 2592000)
         if months < 4:
-            return "a few months ago"
+            relative = "a few months ago"
         elif months < 7:
-            return "about half a year ago"
+            relative = "about half a year ago"
         else:
-            return "several months ago"
+            relative = "several months ago"
 
     else:  # More than a year
         years = int(seconds / 31536000)
         if years == 1:
-            return "last year"
+            relative = "last year"
         else:
-            return f"{years} years ago"
+            relative = f"{years} years ago"
+
+    # If include_exact is True, append the precise timestamp
+    if include_exact:
+        exact_time = timestamp.strftime("%B %d, %Y at %H:%M")
+        return f"{relative} - {exact_time}"
+    
+    return relative
 
 
 # =============================================================================
@@ -355,7 +369,7 @@ class UserState:
             parts.append("(Important observations from past conversations - use temporal context naturally)")
 
             for note in important_notes[:5]:  # Show max 5
-                when = format_relative_time(note.created_at)
+                when = format_relative_time(note.created_at, include_exact=True)
                 if note.category == "security":
                     parts.append(f"  ⚠️ [{note.category.upper()}] {note.content} (noted {when})")
                 else:
@@ -368,8 +382,8 @@ class UserState:
             parts.append("(Use these temporal references naturally: 'Remember when you mentioned X last week...')")
 
             for mem in self.recent_memories[:3]:
-                # Add temporal context - when this conversation happened
-                when = format_relative_time(mem.timestamp)
+                # Add temporal context - when this conversation happened (with exact timestamp)
+                when = format_relative_time(mem.timestamp, include_exact=True)
                 parts.append(f"  📝 {mem.title} ({when})")
                 parts.append(f"     Summary: {mem.summary[:200]}...")
                 if mem.key_insights:
