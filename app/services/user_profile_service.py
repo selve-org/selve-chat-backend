@@ -34,23 +34,44 @@ class UserProfileService:
         "KAEL": "Bold Resilience - Your conscientiousness and discipline"
     }
 
-    async def get_user_scores(self, clerk_user_id: str) -> Optional[Dict[str, Any]]:
+    async def get_user_scores(
+        self,
+        clerk_user_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Fetch user's current SELVE personality scores from AssessmentResult table
 
         Args:
-            clerk_user_id: Clerk authentication ID
+            clerk_user_id: Clerk authentication ID (for logged-in users)
+            session_id: Assessment session ID (for guest users)
 
         Returns:
             Dict containing scores and profile info, or None if no results found
         """
         try:
-            # Query the most recent assessment result for this user
-            result = await db.assessmentresult.find_first(
-                where={
+            # Build query based on what identifiers we have
+            query_where = {}
+
+            if clerk_user_id:
+                # Logged-in user - look up by clerk ID
+                query_where = {
                     "clerkUserId": clerk_user_id,
                     "isCurrent": True
-                },
+                }
+            elif session_id:
+                # Guest user - look up by session ID
+                query_where = {
+                    "sessionId": session_id,
+                    "isCurrent": True
+                }
+            else:
+                # No identifier provided
+                return None
+
+            # Query the most recent assessment result
+            result = await db.assessmentresult.find_first(
+                where=query_where,
                 order={
                     "createdAt": "desc"
                 }

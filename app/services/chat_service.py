@@ -450,10 +450,23 @@ class ChatService:
         
         return validated_scores if validated_scores else None
 
-    async def _get_scores_from_profile(self, clerk_user_id: str) -> Optional[Dict[str, float]]:
-        """Fetch SELVE scores from the user profile service when not provided."""
+    async def _get_scores_from_profile(
+        self,
+        clerk_user_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ) -> Optional[Dict[str, float]]:
+        """
+        Fetch SELVE scores from the user profile service when not provided.
+
+        Args:
+            clerk_user_id: Clerk user ID (for logged-in users)
+            session_id: Assessment session ID (for guest users)
+        """
         try:
-            profile = await self.user_profile_service.get_user_scores(clerk_user_id)
+            profile = await self.user_profile_service.get_user_scores(
+                clerk_user_id=clerk_user_id,
+                session_id=session_id
+            )
             if not profile:
                 return None
 
@@ -464,8 +477,9 @@ class ChatService:
             return self._validate_selve_scores(profile_scores)
         except Exception as exc:
             logger.warning(
-                "Failed to fetch SELVE scores for user %s: %s",
-                clerk_user_id,
+                "Failed to fetch SELVE scores for user %s / session %s: %s",
+                clerk_user_id or "guest",
+                session_id or "none",
                 exc,
                 exc_info=True,
             )
@@ -610,8 +624,12 @@ class ChatService:
         if not assessment_url:
             assessment_url = self.assessment_url
 
-        if not selve_scores and clerk_user_id:
-            selve_scores = await self._get_scores_from_profile(clerk_user_id)
+        if not selve_scores:
+            # Try to get scores from profile - works for both logged-in users and guests
+            selve_scores = await self._get_scores_from_profile(
+                clerk_user_id=clerk_user_id,
+                session_id=session_id
+            )
         
         # Check guardrails first
         canned_response = get_canned_response(message)
@@ -781,8 +799,12 @@ class ChatService:
             if not assessment_url:
                 assessment_url = self.assessment_url
 
-            if not selve_scores and clerk_user_id:
-                selve_scores = await self._get_scores_from_profile(clerk_user_id)
+            if not selve_scores:
+                # Try to get scores from profile - works for both logged-in users and guests
+                selve_scores = await self._get_scores_from_profile(
+                    clerk_user_id=clerk_user_id,
+                    session_id=session_id
+                )
         except InputValidationError as e:
             if emit_status:
                 yield StatusEvent.error(str(e)).to_dict()
